@@ -1,15 +1,17 @@
 # cobro-vision
 
 Prototipo de visión artificial clásica para identificar alimentos en una foto
-cenital y calcular un cobro que revisa el cajero. Interfaz prevista: escritorio
+cenital y calcular un cobro que revisa el cajero. Interfaz de escritorio
 con CustomTkinter.
 
-Esta entrega completa la **Etapa 2: esqueleto de punta a punta**, además del
-dominio, configuración, catálogo y cobro de la Etapa 1. Una foto pasa por
+Esta entrega completa la **Etapa 3: interfaz del cajero y correcciones**, además
+del núcleo de visión de la Etapa 2 y del dominio, catálogo y cobro de la Etapa 1.
+Una foto pasa por
 preprocesamiento, detección del plato, segmentación, características,
 clasificación falsa, consolidación y cobro. Incluye fábrica, tiempos,
 trazabilidad y `demo --debug`. El clasificador por defecto es `ClasificadorFalso`;
-no se entrena ningún modelo. La interfaz y las correcciones quedan para la Etapa 3.
+no se entrena ningún modelo. `app` permite revisar y corregir el recibo antes
+de registrar la confirmación en CSV.
 
 ## Instalación
 
@@ -39,7 +41,55 @@ pip install -e ".[dev]"
 
 El extra opcional de etiquetado se instala con `pip install -e ".[etiquetado]"`.
 Tkinter viene con el instalador de Python de python.org en Windows y macOS;
-en Linux puede requerir el paquete del sistema `python3-tk` para la futura GUI.
+en Linux puede requerir el paquete del sistema `python3-tk` para la GUI.
+
+## Verificación de la Etapa 3
+
+```text
+pytest -q
+ruff check src tests
+python -m cobro_vision app
+```
+
+En la ventana, pulsar **Abrir foto...** y elegir
+`tests/fixtures/plato_sintetico.png` o una foto real que tenga el equipo.
+Con `camara.clase: CamaraUSB`, el botón es **Capturar** y usa el dispositivo
+configurado; no hay vista previa en vivo (es opcional en esta etapa).
+
+Mientras aparece **Procesando...**, comprobar que la ventana responde.
+Revisar las regiones y la leyenda, alternar las marcas y consultar **¿Por qué?**
+y los tiempos. Cambiar un ítem con **Cambiar a...**, quitar otro y agregar uno.
+Elegir la misma clase permite aceptar un ítem marcado **REVISAR**. Si
+`ui.exigir_revision` es `true`, **Confirmar** se habilita cuando no queden ítems
+pendientes de revisión. Los importes y las clases siguen siendo de ejemplo.
+
+Pulsar **Confirmar** y comprobar que aparece una nueva fila en
+`salidas/transacciones.csv` (o en `rutas.salidas` si se cambió la configuración).
+Las columnas son `id`, `fecha_hora` (ISO 8601 con zona local), `items` (JSON con
+alimentos, regiones e importes cobrados), `total_centavos`, `tiempos` (JSON en ms)
+y `n_ajustes`. **Nueva transacción** limpia la pantalla. Una transacción
+confirmada queda bloqueada para cambios y no agrega otra fila al confirmarla de nuevo.
+
+Lectura de fotos, captura, procesamiento, correcciones y escritura del CSV
+se ejecutan en un trabajador. La cola se revisa con `after(50, ...)` desde Tk;
+el trabajador no llama a widgets. Los errores se muestran en la ventana y
+se puede iniciar otra transacción. Al cerrar durante una operación, se espera
+su resultado sin bloquear Tk antes de liberar la cámara.
+
+Las pruebas cubren correcciones individuales y de varias regiones, altas y
+bajas repetidas, importes, revisiones, CSV, funciones de presentación sin Tk y
+renderizado sin pantalla. La prueba gráfica crea y destruye una sola ventana,
+comprueba el flujo y atiende eventos durante el trabajo; se omite automáticamente
+si no hay pantalla. La revisión manual con una foto real y con hardware USB
+queda a cargo del equipo.
+
+Decisiones de esta etapa marcadas como `TODO(equipo)`:
+
+- No se confirma un recibo vacío; confirmar una transacción ya confirmada es idempotente.
+- El CSV conserva el total en centavos enteros y serializa ítems y tiempos como JSON.
+- Las opciones incluyen la clase actual para aceptar una detección en revisión.
+- Si una corrección mueve la última región de una clase que tenía un alta previa,
+  se registra además su baja para que el alta histórica no reaparezca al recalcular.
 
 ## Verificación de la Etapa 2
 
@@ -171,8 +221,8 @@ de trabajo; ejecutar estos ejemplos desde la raíz del repositorio.
 opcional. `evaluar` admite `clasificador`, `segmentacion` y `sistema`.
 `demo --debug` es opcional; `--imagen` y `dividir --prueba` son obligatorios.
 
-`inicializar-catalogo` y `demo` terminan con código **0** al completar o **1** si
-hay un error de configuración, entrada, procesamiento o escritura. Los comandos de etapas
+`inicializar-catalogo`, `demo` y `app` terminan con código **0** al completar o **1** si
+hay un error de configuración, entrada, procesamiento, escritura o arranque. Los comandos de etapas
 posteriores imprimen `No implementado aún (etapa N)` y terminan con código **2**.
 Consultar la ayuda termina con código **0**.
 

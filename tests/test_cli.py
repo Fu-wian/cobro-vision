@@ -4,10 +4,12 @@ import sqlite3
 import subprocess
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from cobro_vision.cli import construir_analizador, principal
+from cobro_vision.controlador.controlador import ControladorTransaccion
 
 
 @pytest.mark.parametrize(
@@ -22,7 +24,6 @@ from cobro_vision.cli import construir_analizador, principal
         (["evaluar", "segmentacion"], 6),
         (["evaluar", "sistema"], 6),
         (["ablacion"], 7),
-        (["app"], 3),
     ],
 )
 def test_comandos_pendientes(
@@ -132,3 +133,41 @@ def test_inicializar_con_config_invalida(
         == 1
     )
     assert "No se pudo inicializar" in caplog.text
+
+
+def test_app_crea_controlador_ventana_y_mainloop(
+    ruta_config_temporal: Path, controlador_cajero: ControladorTransaccion
+) -> None:
+    """El comando app ensambla el pipeline y entra al bucle de CustomTkinter."""
+    with (
+        patch(
+            "cobro_vision.cli.FabricaPipeline.crear", return_value=controlador_cajero
+        ) as crear,
+        patch("cobro_vision.vista.vista_cajero.VistaCajero") as ventana,
+    ):
+        assert principal(["app", "--config", str(ruta_config_temporal)]) == 0
+    crear.assert_called_once()
+    assert ventana.call_args.args[0] is controlador_cajero
+    ventana.return_value.mainloop.assert_called_once()
+    ventana.return_value.destroy.assert_called_once()
+
+
+def test_app_error_de_arranque_libera_camara(
+    ruta_config_temporal: Path,
+    controlador_cajero: ControladorTransaccion,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Un error al crear la ventana devuelve uno y libera el dispositivo."""
+    with (
+        patch(
+            "cobro_vision.cli.FabricaPipeline.crear", return_value=controlador_cajero
+        ),
+        patch(
+            "cobro_vision.vista.vista_cajero.VistaCajero",
+            side_effect=RuntimeError("Sin pantalla"),
+        ),
+        patch.object(controlador_cajero.camara, "liberar") as liberar,
+    ):
+        assert principal(["app", "--config", str(ruta_config_temporal)]) == 1
+    liberar.assert_called_once()
+    assert "Sin pantalla" in caplog.text

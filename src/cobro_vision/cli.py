@@ -87,6 +87,8 @@ def principal(argumentos: list[str] | None = None) -> int:
     opciones = construir_analizador().parse_args(argumentos)
     if opciones.comando == "demo":
         return _ejecutar_demo(opciones)
+    if opciones.comando == "app":
+        return _ejecutar_app(opciones)
     if opciones.comando == "inicializar-catalogo":
         try:
             config = Configuracion.cargar(opciones.config)
@@ -110,6 +112,28 @@ def principal(argumentos: list[str] | None = None) -> int:
         return 0
     print(f"No implementado aún (etapa {opciones.etapa})")
     return 2
+
+
+def _ejecutar_app(opciones: argparse.Namespace) -> int:
+    # Importación diferida: los comandos de consola funcionan sin Tk ni pantalla.
+    controlador = None
+    vista = None
+    try:
+        from cobro_vision.vista.vista_cajero import VistaCajero
+
+        config = Configuracion.cargar(opciones.config)
+        controlador = FabricaPipeline.crear(config)
+        vista = VistaCajero(controlador, config)
+        vista.mainloop()
+        return 0
+    except Exception as error:  # noqa: BLE001 - incluye errores de Tk y de arranque
+        logging.getLogger(__name__).error("No se pudo abrir la interfaz: %s", error)
+        return 1
+    finally:
+        if vista is not None:
+            vista.destroy()
+        elif controlador is not None:
+            controlador.camara.liberar()
 
 
 def _ejecutar_demo(opciones: argparse.Namespace) -> int:

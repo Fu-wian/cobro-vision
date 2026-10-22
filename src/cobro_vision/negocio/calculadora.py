@@ -14,6 +14,11 @@ class CalculadoraCosto:
         self._catalogo = catalogo
         self._politica = politica
 
+    @property
+    def catalogo(self) -> CatalogoAlimentos:
+        """Expone el catálogo compartido para consultar opciones del cajero."""
+        return self._catalogo
+
     def calcular(self, regiones: list[Region], ajustes: list[Ajuste] = ()) -> Recibo:
         """Agrupa regiones clasificadas, aplica altas/bajas y calcula el recibo."""
         grupos: dict[str, list[Region]] = {}
@@ -49,6 +54,7 @@ class CalculadoraCosto:
                 ),
                 precio_cobrado_centavos=0,
             )
+        automaticos = items.copy()
         for ajuste in ajustes:
             if ajuste.tipo == "quitar":
                 self._catalogo.obtener(ajuste.id_clase)
@@ -60,7 +66,12 @@ class CalculadoraCosto:
                         alimento.id_clase,
                         ItemRecibo(alimento, "manual", [], None, False, 0),
                     )
-            elif ajuste.tipo != "corregir":
+            elif ajuste.tipo == "corregir":
+                item = automaticos.get(ajuste.id_clase)
+                if item is not None and ajuste.id_region in item.ids_region:
+                    # Una corrección posterior puede recuperar una clase quitada.
+                    items[ajuste.id_clase] = item
+            else:
                 raise ValueError(f"Tipo de ajuste desconocido: {ajuste.tipo}")
             # Las correcciones ya están aplicadas a las regiones por el controlador.
         return self._politica.calcular([items[clave] for clave in sorted(items)])
