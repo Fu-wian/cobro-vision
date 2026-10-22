@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import yaml
-from helpers import generar_plato_sintetico
+from helpers import escribir_dataset_sintetico, generar_plato_sintetico
 
 from cobro_vision.configuracion import Configuracion
 from cobro_vision.controlador.controlador import ControladorTransaccion
@@ -27,31 +27,60 @@ def ruta_proyecto() -> Path:
 
 
 @pytest.fixture
-def datos_config(ruta_proyecto: Path) -> dict:
-    """Carga los valores de ejemplo para probar variaciones aisladas."""
-    return yaml.safe_load((ruta_proyecto / "config.yaml").read_text(encoding="utf-8"))
+def ruta_semilla_catalogo(tmp_path: Path) -> Path:
+    """Crea un CSV con las clases y los precios sintéticos de las pruebas."""
+    ruta = tmp_path / "catalogo_pruebas.csv"
+    ruta.write_text(
+        "id_clase,nombre,categoria,precio_centavos,activo\n"
+        "arroz_amarillo,Arroz sintetico,base,100,1\n"
+        "ensalada,Ensalada sintetica,ensalada,75,1\n"
+        "fondo,Fondo sintetico,fondo,0,1\n"
+        "frijoles,Frijoles sinteticos,acompanante,75,1\n"
+        "pescado_frito,Pescado sintetico,proteina,275,1\n"
+        "pollo,Pollo sintetico,proteina,250,1\n",
+        encoding="utf-8",
+    )
+    return ruta
 
 
 @pytest.fixture
-def ruta_config_temporal(
-    tmp_path: Path, ruta_proyecto: Path, datos_config: dict
-) -> Path:
+def datos_config(ruta_proyecto: Path, ruta_semilla_catalogo: Path) -> dict:
+    """Carga la configuración y sustituye la semilla por el CSV de prueba."""
+    datos = yaml.safe_load((ruta_proyecto / "config.yaml").read_text(encoding="utf-8"))
+    datos["rutas"]["semilla_catalogo"] = str(ruta_semilla_catalogo)
+    return datos
+
+
+@pytest.fixture
+def ruta_config_temporal(tmp_path: Path, datos_config: dict) -> Path:
     """Escribe una configuración cuyo catálogo se genera en una carpeta temporal."""
     datos_config["rutas"]["catalogo"] = str(tmp_path / "datos" / "catalogo.db")
-    datos_config["rutas"]["semilla_catalogo"] = str(
-        ruta_proyecto / "data/catalogo_seed.csv"
-    )
     ruta = tmp_path / "config.yaml"
     ruta.write_text(yaml.safe_dump(datos_config, allow_unicode=True), encoding="utf-8")
     return ruta
 
 
 @pytest.fixture
-def catalogo(tmp_path: Path, ruta_proyecto: Path) -> CatalogoAlimentos:
-    """Inicializa un catálogo de ejemplo sin modificar los datos del proyecto."""
+def catalogo(tmp_path: Path, ruta_semilla_catalogo: Path) -> CatalogoAlimentos:
+    """Inicializa un catálogo temporal exclusivamente con datos de prueba."""
     catalogo = CatalogoAlimentos(tmp_path / "datos" / "catalogo.db")
-    catalogo.inicializar(ruta_proyecto / "data/catalogo_seed.csv")
+    catalogo.inicializar(ruta_semilla_catalogo)
     return catalogo
+
+
+@pytest.fixture
+def config_dataset(
+    tmp_path: Path, datos_config: dict, catalogo: CatalogoAlimentos
+) -> Configuracion:
+    """Prepara seis platos con dos tomas cada uno y rutas aisladas."""
+    carpeta = tmp_path / "data" / "raw"
+    escribir_dataset_sintetico(carpeta, 6)
+    datos_config["rutas"]["imagenes"] = str(carpeta)
+    datos_config["rutas"]["manifiesto"] = str(tmp_path / "data" / "manifest.csv")
+    datos_config["rutas"]["catalogo"] = str(catalogo.ruta_db)
+    ruta = tmp_path / "dataset.yaml"
+    ruta.write_text(yaml.safe_dump(datos_config), encoding="utf-8")
+    return Configuracion.cargar(ruta)
 
 
 @pytest.fixture

@@ -13,15 +13,22 @@ from cobro_vision.negocio.catalogo import CatalogoAlimentos
 
 
 def test_inicializar_idempotente_y_upsert(
-    catalogo: CatalogoAlimentos, ruta_proyecto: Path
+    catalogo: CatalogoAlimentos, ruta_semilla_catalogo: Path
 ) -> None:
     """Repetir la inicialización actualiza sin duplicar filas."""
     catalogo.actualizar_precio("pollo", 999)
-    catalogo.inicializar(ruta_proyecto / "data/catalogo_seed.csv")
-    catalogo.inicializar(ruta_proyecto / "data/catalogo_seed.csv")
-    assert len(catalogo.listar()) == 10
+    catalogo.inicializar(ruta_semilla_catalogo)
+    catalogo.inicializar(ruta_semilla_catalogo)
+    assert catalogo.clases_validas() == [
+        "arroz_amarillo",
+        "ensalada",
+        "fondo",
+        "frijoles",
+        "pescado_frito",
+        "pollo",
+    ]
     with sqlite3.connect(catalogo.ruta_db) as conexion:
-        assert conexion.execute("SELECT COUNT(*) FROM alimentos").fetchone()[0] == 10
+        assert conexion.execute("SELECT COUNT(*) FROM alimentos").fetchone()[0] == 6
         assert (
             conexion.execute(
                 "SELECT typeof(precio_centavos) FROM alimentos WHERE id_clase='pollo'"

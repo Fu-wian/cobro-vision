@@ -15,9 +15,6 @@ from cobro_vision.controlador.controlador import ControladorTransaccion
 @pytest.mark.parametrize(
     ("argumentos", "etapa"),
     [
-        (["validar-etiquetas"], 4),
-        (["construir-manifiesto"], 4),
-        (["dividir", "--prueba", "0.2"], 4),
         (["entrenar"], 5),
         (["entrenar", "--modo", "ambos"], 5),
         (["evaluar", "clasificador"], 6),
@@ -116,7 +113,14 @@ def test_inicializar_catalogo_dos_veces(ruta_config_temporal: Path) -> None:
         filas = conexion.execute(
             "SELECT id_clase FROM alimentos ORDER BY id_clase"
         ).fetchall()
-    assert len(filas) == 10
+    assert [fila[0] for fila in filas] == [
+        "arroz_amarillo",
+        "ensalada",
+        "fondo",
+        "frijoles",
+        "pescado_frito",
+        "pollo",
+    ]
     clases = (
         ruta_catalogo.with_name("clases.txt").read_text(encoding="utf-8").splitlines()
     )

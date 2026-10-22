@@ -1,5 +1,6 @@
 """Imágenes artificiales reproducibles; no representan fotografías reales."""
 
+import json
 from pathlib import Path
 
 import cv2
@@ -71,6 +72,62 @@ def generar_plato_sintetico(
         np.uint8
     )
     return imagen, etiquetas
+
+
+def escribir_dataset_sintetico(carpeta: Path, n_platos: int) -> None:
+    """Escribe dos fotos PNG y JSON por plato artificial en carpeta/S01/."""
+    from cobro_vision.configuracion import Configuracion
+
+    if type(n_platos) is not int or n_platos < 0:
+        raise ValueError("n_platos debe ser un entero no negativo.")
+    semilla = Configuracion.cargar(
+        Path(__file__).resolve().parents[1] / "config.yaml"
+    ).semilla
+    sesion = carpeta / "S01"
+    sesion.mkdir(parents=True, exist_ok=True)
+    clases = ("pollo", "ensalada", "arroz_amarillo", "frijoles")
+    for plato in range(1, n_platos + 1):
+        for toma in ("a", "b"):
+            generador = np.random.SeedSequence([semilla, plato, ord(toma)])
+            imagen, etiquetas = generar_plato_sintetico(
+                int(generador.generate_state(1)[0]), 4
+            )
+            formas = []
+            for indice, clase in enumerate(clases, start=1):
+                contornos, _ = cv2.findContours(
+                    (etiquetas == indice).astype(np.uint8),
+                    cv2.RETR_EXTERNAL,
+                    cv2.CHAIN_APPROX_SIMPLE,
+                )
+                for contorno in contornos:
+                    formas.append(
+                        {
+                            "label": clase,
+                            "shape_type": "polygon",
+                            "points": contorno[:, 0, :].tolist(),
+                        }
+                    )
+            formas.append(
+                {
+                    "label": "fondo",
+                    "shape_type": "rectangle",
+                    "points": [[5, 5], [35, 35]],
+                }
+            )
+            ruta = sesion / f"P{plato:03d}_{toma}.png"
+            if not cv2.imwrite(str(ruta), imagen):
+                raise OSError(f"No se pudo escribir la imagen sintética: {ruta}")
+            datos = {
+                "imagePath": ruta.name,
+                "imageWidth": imagen.shape[1],
+                "imageHeight": imagen.shape[0],
+                "shapes": formas,
+                "imageData": None,
+            }
+            ruta.with_suffix(".json").write_text(
+                json.dumps(datos, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
 
 if __name__ == "__main__":
