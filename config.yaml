@@ -1,0 +1,71 @@
+semilla: 42
+rutas:
+  imagenes: data/raw
+  manifiesto: data/manifest.csv
+  catalogo: data/catalogo.db
+  # TODO(equipo): Confirmar el menú, los id_clase y los precios de ejemplo de la semilla.
+  semilla_catalogo: data/catalogo_seed.csv
+  modelos: models
+  modelo_actual: models/modelo_actual.joblib
+  salidas: salidas
+imagen:
+  lado_mayor: 640
+  filtro: {tipo: mediana, tamano: 3}        # mediana | gaussiano | ninguno
+  correccion_color: {metodo: gray_world}    # gray_world | tarjeta_gris | ninguna
+plato:
+  metodo: hough                             # hough | umbral | imagen_completa
+  radio_min_frac: 0.20                      # relativos al lado menor de la imagen procesada
+  radio_max_frac: 0.60
+  reducir_radio: 0.97
+  area_minima_frac: 0.10
+  umbral: {s_max: 60, v_min: 140}           # usado por 'umbral' y como respaldo de 'hough'
+segmentacion:
+  clase: SegmentadorSuperpixeles            # SegmentadorSuperpixeles | SegmentadorVentanas
+  n_segmentos: 100
+  compacidad: 10
+  sigma: 1.0
+  area_minima_px: 150
+  ventanas: {tamano: 40, paso: 40}
+caracteristicas:
+  - clase: ExtractorHistogramaColor
+    espacio: hsv                            # hsv | lab
+    bins: [16, 8, 8]
+    momentos: true
+  - clase: ExtractorTextura
+    lbp: {radio: 1, puntos: 8}
+    gradiente: true
+    glcm: false
+clasificador:
+  tipo: falso                               # falso | svm (cambiar a svm tras la etapa 5)
+  kernel: rbf
+  C: 10
+  gamma: scale
+  class_weight: balanced
+  # TODO(equipo): Calibrar este umbral provisional con 'evaluar clasificador'.
+  umbral_confianza: 0.5
+  busqueda: {C: [1, 10, 100], gamma: [scale, 0.01, 0.1], folds: 5}
+entrenamiento:
+  modo: poligonos                           # poligonos | segmentacion | ambos
+  parches_por_poligono: 8
+  radio_parche: 22
+  pureza_minima: 0.8
+  min_instancias_por_clase: 20
+posproceso:
+  componente_minimo_frac: 0.01
+  clase_minima_frac: 0.03
+  max_proteinas: 1                          # null = sin límite
+cobro:
+  # TODO(equipo): Confirmar la política real de cobro de la cafetería.
+  politica: CobroPorComponente              # CobroPorComponente | CobroPorPlato
+  por_plato:
+    precios_por_proteina_centavos: {}       # {pollo: 450, pescado_frito: 475}; vacío = suma
+camara:
+  clase: CamaraArchivo                      # CamaraArchivo | CamaraUSB
+  carpeta: data/raw
+  indice: 0
+ui:
+  exigir_revision: true                     # Confirmar se bloquea con ítems en revisión
+  moneda: "B/."
+  tema: system                              # system | light | dark
+  tamano_ventana: [1200, 720]
+  vista_previa_ms: 33                       # intervalo de vista previa (solo CamaraUSB)

@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cobro-vision"
+version = "0.1.0"
+description = "Prototipo de cobro de alimentos mediante visión artificial clásica."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python-headless>=4.8",
+    "scikit-image>=0.21",
+    "scikit-learn>=1.3",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "pyyaml>=6",
+    "joblib>=1.3",
+    "pillow>=10",
+    "matplotlib>=3.7",
+    "customtkinter>=5.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff"]
+etiquetado = ["labelme"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"

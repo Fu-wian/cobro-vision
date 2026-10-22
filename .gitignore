@@ -1,0 +1,17 @@
+# Se ignora el contenido de data para permitir la excepción de la semilla.
+data/*
+!data/catalogo_seed.csv
+models/
+salidas/
+__pycache__/
+*.py[cod]
+.venv/
+*.joblib
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.coverage
+.coverage.*
+htmlcov/

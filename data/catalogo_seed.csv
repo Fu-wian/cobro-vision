@@ -1,0 +1,11 @@
+id_clase,nombre,categoria,precio_centavos,activo
+arroz_amarillo,Arroz amarillo con zanahoria,base,100,1
+arroz_guandu,Arroz con guandú,base,100,1
+frijoles,Frijoles,base,75,1
+pollo,Pollo,proteina,250,1
+pescado_frito,Pescado frito,proteina,275,1
+carne_guisada,Carne guisada,proteina,275,1
+platano_frito,Plátano maduro frito,acompanante,75,1
+pepino,Pepino,acompanante,50,1
+ensalada,Ensalada,ensalada,75,1
+fondo,"Fondo (plato, mesa, sombras)",fondo,0,1
