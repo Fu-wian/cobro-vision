@@ -1,5 +1,7 @@
 """Humo gráfico y aislamiento del hilo de trabajo, también sin pantalla."""
 
+import gc
+from functools import partial
 from queue import Queue
 from threading import Event, get_ident
 from time import monotonic
@@ -7,6 +9,7 @@ from tkinter import TclError
 from types import MethodType, SimpleNamespace
 from unittest.mock import Mock, patch
 
+import numpy as np
 import pytest
 
 from cobro_vision.controlador.controlador import ControladorTransaccion
@@ -32,17 +35,36 @@ def vista(controlador_cajero: ControladorTransaccion):
 
 
 def _esperar_resultado(vista: VistaCajero) -> None:
+    """Atiende el bucle real de Tk mientras espera el resultado del trabajador."""
     limite = monotonic() + 5
-    while vista._ocupada and monotonic() < limite:
-        vista.update()
-        Event().wait(0.005)
-    assert not vista._ocupada, "La cola de resultados no fue atendida por Tk."
+    consulta = None
+
+    def revisar() -> None:
+        nonlocal consulta
+        consulta = None
+        if not vista._ocupada or monotonic() >= limite:
+            vista.quit()
+        else:
+            consulta = vista.after(5, revisar)
+
+    consulta = vista.after(0, revisar)
+    try:
+        vista.mainloop()
+    finally:
+        if not vista._destruida and consulta is not None:
+            vista.after_cancel(consulta)
+    assert not vista._ocupada, (
+        "La cola de resultados no fue atendida por Tk: "
+        f"trabajador activo={vista._hilo.is_alive()}, pendientes={vista._cola.qsize()}."
+    )
 
 
 def test_humo_y_flujo_de_ventana_customtkinter(
-    vista: VistaCajero, transaccion_cajero: Transaccion
+    vista: VistaCajero,
+    transaccion_cajero: Transaccion,
+    plato_sintetico: tuple[np.ndarray, np.ndarray],
 ) -> None:
-    """Crea y destruye una ventana, comprobando flujo, fluidez y cierre seguro."""
+    """Comprueba el flujo y tres ciclos de procesar, limpiar y procesar otra foto."""
     vista.update_idletasks()
     assert vista.title() == "Cobro Vision · Cajero"
     assert vista._boton_confirmar.cget("state") == "disabled"
@@ -70,11 +92,58 @@ def test_humo_y_flujo_de_ventana_customtkinter(
     assert vista.transaccion.estado == "confirmada"
     assert vista._boton_confirmar.cget("state") == "disabled"
     vista._nueva_transaccion()
-    assert vista.transaccion is None and vista._imagen_tk is None
+    assert vista.transaccion is None and vista._imagen_tk is vista._imagen_vacia
     assert vista._total.cget("text") == "B/. 0.00"
     assert vista._controles_filas == []
+    _comprobar_ciclos_de_imagenes(vista, plato_sintetico[0])
     _comprobar_eventos_y_error(vista)
     _comprobar_cierre(vista, transaccion_cajero)
+
+
+def _comprobar_ciclos_de_imagenes(vista: VistaCajero, imagen: np.ndarray) -> None:
+    """Reutiliza el transparente y detecta errores de Tk durante limpiezas repetidas."""
+    imagen_vacia = vista._imagen_vacia
+    transparente = imagen_vacia.cget("light_image")
+    assert transparente.mode == "RGBA" and transparente.size == (1, 1)
+    assert transparente.getpixel((0, 0)) == (0, 0, 0, 0)
+    otra_imagen = np.ascontiguousarray(imagen[:, ::-1])
+    principal = get_ident()
+
+    def crear_pil(*argumentos, **opciones):
+        assert get_ident() == principal
+        return desde_array(*argumentos, **opciones)
+
+    def crear_ctk(*argumentos, **opciones):
+        assert get_ident() == principal
+        return tipo_imagen(*argumentos, **opciones)
+
+    from cobro_vision.vista import vista_cajero
+
+    desde_array = vista_cajero.Image.fromarray
+    tipo_imagen = vista_cajero.ctk.CTkImage
+    with (
+        patch.object(
+            vista, "report_callback_exception", wraps=vista.report_callback_exception
+        ) as errores_tk,
+        patch.object(vista_cajero.Image, "fromarray", side_effect=crear_pil),
+        patch.object(vista_cajero.ctk, "CTkImage", side_effect=crear_ctk),
+    ):
+        for _ in range(3):
+            for foto in (imagen, otra_imagen):
+                vista._iniciar_tarea(partial(vista.controlador.procesar, foto))
+                _esperar_resultado(vista)
+                assert vista.transaccion.estado in {"procesada", "requiere_revision"}
+                assert vista._imagen_tk is not imagen_vacia
+                assert vista._foto.cget("image") is vista._imagen_tk
+                vista._boton_nueva.invoke()
+                gc.collect()
+                vista.update()
+                assert vista.transaccion is None
+                assert vista._imagen_vacia is imagen_vacia
+                assert vista._imagen_tk is imagen_vacia
+                assert vista._foto.cget("image") is imagen_vacia
+                assert vista._foto.cget("text") == "Abra una foto del plato"
+        errores_tk.assert_not_called()
 
 
 @pytest.mark.parametrize("falla", [False, True])

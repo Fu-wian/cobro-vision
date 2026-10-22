@@ -60,7 +60,11 @@ class VistaCajero(ctk.CTk):
         self._consulta: str | None = None
         self._con_marcas = True
         self._imagen_bgr: np.ndarray | None = None
-        self._imagen_tk: ctk.CTkImage | None = None
+        transparente = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+        self._imagen_vacia = ctk.CTkImage(
+            light_image=transparente, dark_image=transparente, size=(1, 1)
+        )
+        self._imagen_tk: ctk.CTkImage = self._imagen_vacia
         self._controles_filas: list[ctk.CTkBaseClass] = []
         self._etiquetas = etiquetas_alimentos(controlador.catalogo)
         self._ids_opciones = {texto: clase for clase, texto in self._etiquetas.items()}
@@ -90,7 +94,9 @@ class VistaCajero(ctk.CTk):
         self._panel_imagen.grid(row=1, column=0, padx=10, sticky="nsew")
         self._panel_imagen.grid_columnconfigure(0, weight=1)
         self._panel_imagen.grid_rowconfigure(0, weight=1)
-        self._foto = ctk.CTkLabel(self._panel_imagen, text="Abra una foto del plato")
+        self._foto = ctk.CTkLabel(
+            self._panel_imagen, image=self._imagen_tk, text="Abra una foto del plato"
+        )
         self._foto.grid(row=0, column=0)
         self._panel_imagen.bind("<Configure>", lambda evento: self._redibujar_foto())
         self._leyenda = ctk.CTkFrame(izquierda)
@@ -352,9 +358,10 @@ class VistaCajero(ctk.CTk):
             return
         self.transaccion = None
         self._imagen_bgr = None
-        self._imagen_tk = None
         self._con_marcas = True
-        self._foto.configure(image=None, text="Abra una foto del plato")
+        # Sustituir la imagen de Tk antes de soltar la referencia anterior.
+        self._foto.configure(image=self._imagen_vacia, text="Abra una foto del plato")
+        self._imagen_tk = self._imagen_vacia
         for contenedor in (self._filas, self._leyenda):
             for widget in contenedor.winfo_children():
                 widget.destroy()
@@ -373,8 +380,9 @@ class VistaCajero(ctk.CTk):
             max(1, self._panel_imagen.winfo_height() - 12),
         )
         rgb = Image.fromarray(imagen[:, :, ::-1])
-        self._imagen_tk = ctk.CTkImage(light_image=rgb, dark_image=rgb, size=rgb.size)
-        self._foto.configure(image=self._imagen_tk, text="")
+        nueva = ctk.CTkImage(light_image=rgb, dark_image=rgb, size=rgb.size)
+        self._foto.configure(image=nueva, text="")
+        self._imagen_tk = nueva
 
     def _alternar_marcas(self) -> None:
         self._con_marcas = not self._con_marcas
