@@ -253,6 +253,18 @@ def _validar(datos: dict) -> None:
                     entero=True,
                     positivo=True,
                 )
+            for nombre in ("glcm_distancias", "glcm_angulos"):
+                if nombre not in extractor:
+                    continue
+                campo = f"{prefijo}.{nombre}"
+                _lista(extractor[nombre], campo)
+                for valor in extractor[nombre]:
+                    _numero(
+                        valor,
+                        campo,
+                        entero=nombre == "glcm_distancias",
+                        positivo=nombre == "glcm_distancias",
+                    )
             booleanos = ("gradiente", "glcm")
         for nombre in booleanos:
             _exigir(

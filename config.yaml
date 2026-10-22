@@ -35,6 +35,8 @@ caracteristicas:
     lbp: {radio: 1, puntos: 8}
     gradiente: true
     glcm: false
+    glcm_distancias: [1]
+    glcm_angulos: [0.0]                       # radianes; propiedades promediadas
 clasificador:
   tipo: falso                               # falso | svm (cambiar a svm tras la etapa 5)
   kernel: rbf

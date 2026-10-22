@@ -2,10 +2,18 @@
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
+from helpers import generar_plato_sintetico
 
 from cobro_vision.negocio.catalogo import CatalogoAlimentos
+
+
+@pytest.fixture
+def plato_sintetico(datos_config: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Crea un plato artificial con la semilla compartida del YAML."""
+    return generar_plato_sintetico(datos_config["semilla"], 4)
 
 
 @pytest.fixture

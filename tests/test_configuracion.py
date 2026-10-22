@@ -126,6 +126,11 @@ def test_valores_invalidos_con_nombre_del_campo(
         (0, "momentos", 1),
         (1, "gradiente", "si"),
         (1, "glcm", None),
+        (1, "glcm_distancias", []),
+        (1, "glcm_distancias", [0]),
+        (1, "glcm_distancias", [1.5]),
+        (1, "glcm_angulos", []),
+        (1, "glcm_angulos", [float("nan")]),
     ],
 )
 def test_extractores_invalidos(

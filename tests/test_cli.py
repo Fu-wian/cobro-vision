@@ -16,7 +16,6 @@ from cobro_vision.cli import construir_analizador, principal
         (["validar-etiquetas"], 4),
         (["construir-manifiesto"], 4),
         (["dividir", "--prueba", "0.2"], 4),
-        (["demo", "--imagen", "foto.jpg", "--debug"], 2),
         (["entrenar"], 5),
         (["entrenar", "--modo", "ambos"], 5),
         (["evaluar", "clasificador"], 6),

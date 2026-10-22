@@ -5,8 +5,15 @@ import logging
 import sqlite3
 from pathlib import Path
 
+import cv2
+
+from cobro_vision.adquisicion.camara import CamaraArchivo
 from cobro_vision.configuracion import Configuracion
+from cobro_vision.controlador.fabrica import FabricaPipeline
 from cobro_vision.dominio.errores import CobroVisionError
+from cobro_vision.dominio.modelos import Transaccion
+from cobro_vision.dominio.utilidades import formatear_dinero
+from cobro_vision.explicacion.depuracion import guardar_depuracion
 from cobro_vision.negocio.catalogo import CatalogoAlimentos
 
 
@@ -78,6 +85,8 @@ def principal(argumentos: list[str] | None = None) -> int:
     """Ejecuta los comandos disponibles o informa la etapa pendiente."""
     logging.basicConfig(level=logging.INFO)
     opciones = construir_analizador().parse_args(argumentos)
+    if opciones.comando == "demo":
+        return _ejecutar_demo(opciones)
     if opciones.comando == "inicializar-catalogo":
         try:
             config = Configuracion.cargar(opciones.config)
@@ -101,3 +110,58 @@ def principal(argumentos: list[str] | None = None) -> int:
         return 0
     print(f"No implementado aún (etapa {opciones.etapa})")
     return 2
+
+
+def _ejecutar_demo(opciones: argparse.Namespace) -> int:
+    controlador = None
+    try:
+        config = Configuracion.cargar(opciones.config)
+        imagen = CamaraArchivo.leer(opciones.imagen)
+        controlador = FabricaPipeline.crear(config)
+        transaccion = controlador.procesar(imagen)
+        texto = _texto_recibo(transaccion, config.seccion("ui")["moneda"])
+        print(texto)
+        if opciones.debug:
+            carpeta = (
+                Path(config.seccion("rutas")["salidas"])
+                / "debug"
+                / opciones.imagen.stem
+            )
+            guardar_depuracion(transaccion, carpeta, texto)
+            logging.getLogger(__name__).info("Depuración guardada en %s", carpeta)
+        if transaccion.estado == "error":
+            logging.getLogger(__name__).error("%s", transaccion.mensaje_error)
+            return 1
+        return 0
+    except (
+        CobroVisionError,
+        OSError,
+        ValueError,
+        RuntimeError,
+        sqlite3.Error,
+        cv2.error,
+    ) as error:
+        logging.getLogger(__name__).error("No se pudo procesar la imagen: %s", error)
+        return 1
+    finally:
+        if controlador is not None:
+            controlador.camara.liberar()
+
+
+def _texto_recibo(transaccion: Transaccion, moneda: str) -> str:
+    lineas = [f"Recibo {transaccion.id}"]
+    if transaccion.recibo is not None:
+        for item in transaccion.recibo.items:
+            precio = formatear_dinero(item.precio_cobrado_centavos, moneda)
+            marca = " [REVISAR]" if item.requiere_revision else ""
+            lineas.append(f"{item.alimento.nombre}: {precio}{marca}")
+        lineas.append(
+            f"Total: {formatear_dinero(transaccion.recibo.total_centavos, moneda)}"
+        )
+    lineas.extend(
+        [
+            f"Estado: {transaccion.estado}",
+            f"Tiempo total: {transaccion.tiempos.get('total', 0):.2f} ms",
+        ]
+    )
+    return "\n".join(lineas)

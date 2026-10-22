@@ -9,6 +9,22 @@ if TYPE_CHECKING:
     from cobro_vision.dominio.modelos import Region
 
 
+def _validar_imagen(imagen: np.ndarray) -> None:
+    if (
+        not isinstance(imagen, np.ndarray)
+        or imagen.dtype != np.uint8
+        or imagen.ndim != 3
+        or imagen.shape[2] != 3
+        or not imagen.size
+    ):
+        raise ValueError("La imagen debe ser BGR uint8, no vacía y con tres canales.")
+
+
+def _validar_mascara(mascara: np.ndarray, forma: tuple[int, int]) -> None:
+    if mascara.dtype != np.bool_ or mascara.shape != forma:
+        raise ValueError("La máscara debe ser bool y tener la forma de la imagen.")
+
+
 def validar_centavos(centavos: int) -> None:
     """Exige una cantidad entera no negativa, sin aceptar booleanos."""
     if type(centavos) is not int or centavos < 0:
