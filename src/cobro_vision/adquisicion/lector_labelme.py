@@ -6,11 +6,31 @@ from pathlib import Path
 
 import cv2
 
-from cobro_vision.dominio.errores import EtiquetaInvalida
+from cobro_vision.configuracion import Configuracion
+from cobro_vision.dominio.errores import ConfiguracionInvalida, EtiquetaInvalida
 from cobro_vision.dominio.modelos import Etiquetado, Forma
+from cobro_vision.negocio.catalogo import CatalogoAlimentos
 
 
-def _leer_etiquetado(ruta_json: Path) -> tuple[Etiquetado | None, list[str]]:
+def _cargar_alias(
+    config: Configuracion, catalogo: CatalogoAlimentos | None = None
+) -> dict[str, str]:
+    alias = config.seccion("etiquetas")["alias"]
+    if alias:
+        if catalogo is None:
+            catalogo = CatalogoAlimentos(Path(config.seccion("rutas")["catalogo"]))
+        clases = set(catalogo.clases_validas())
+        for origen, destino in alias.items():
+            if destino not in clases:
+                raise ConfiguracionInvalida(
+                    f"etiquetas.alias.{origen}: destino fuera del catálogo activo: {destino!r}."
+                )
+    return alias
+
+
+def _leer_etiquetado(
+    ruta_json: Path, alias: dict[str, str] | None = None
+) -> tuple[Etiquetado | None, list[str]]:
     """Acumula problemas independientes para que el validador los informe juntos."""
     errores: list[str] = []
 
@@ -93,7 +113,7 @@ def _leer_etiquetado(ruta_json: Path) -> tuple[Etiquetado | None, list[str]]:
             else:
                 (x0, y0), (x1, y1) = puntos
                 puntos = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
-        formas.append(Forma(etiqueta, tipo, puntos))
+        formas.append(Forma((alias or {}).get(etiqueta, etiqueta), tipo, puntos))
     if not dimensiones_validas:
         return None, errores
     return Etiquetado(ruta_imagen, ruta_json, ancho, alto, formas), errores
@@ -102,9 +122,18 @@ def _leer_etiquetado(ruta_json: Path) -> tuple[Etiquetado | None, list[str]]:
 class LectorLabelMe:
     """Lee polígonos y rectángulos, sin usar imageData ni alterar la escala."""
 
+    # TODO(equipo): el contrato no fija constructor; la configuración opcional
+    # permite inyectar alias y conserva el uso existente de LectorLabelMe().
+    def __init__(
+        self,
+        config: Configuracion | None = None,
+        catalogo: CatalogoAlimentos | None = None,
+    ) -> None:
+        self._alias = _cargar_alias(config, catalogo) if config is not None else {}
+
     def leer(self, ruta_json: Path) -> Etiquetado:
         """Valida estructura, puntos y dimensiones de la foto orientada por EXIF."""
-        etiquetado, errores = _leer_etiquetado(ruta_json)
+        etiquetado, errores = _leer_etiquetado(ruta_json, self._alias)
         if errores:
             raise EtiquetaInvalida("\n".join(errores))
         assert etiquetado is not None

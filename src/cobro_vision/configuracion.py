@@ -61,6 +61,8 @@ def _lista(valor: object, campo: str, longitud: int | None = None) -> None:
 def _validar(datos: dict) -> None:
     secciones = (
         "rutas",
+        "etiquetas",
+        "etiquetas.alias",
         "imagen",
         "plato",
         "segmentacion",
@@ -80,6 +82,17 @@ def _validar(datos: dict) -> None:
     for campo in secciones:
         _exigir(
             isinstance(_campo(datos, campo), dict), campo, "se esperaba un diccionario."
+        )
+    for origen, destino in _campo(datos, "etiquetas.alias").items():
+        _exigir(
+            isinstance(origen, str) and bool(origen.strip()),
+            "etiquetas.alias",
+            "la etiqueta de origen debe ser texto no vacío.",
+        )
+        _exigir(
+            isinstance(destino, str) and bool(destino.strip()),
+            f"etiquetas.alias.{origen}",
+            "el id_clase de destino debe ser texto no vacío.",
         )
     for nombre in (
         "imagenes",
@@ -302,6 +315,9 @@ class Configuracion:
                 f"{ruta}: no se pudo leer la configuración: {error}"
             ) from error
         _exigir(isinstance(datos, dict), "config", "se esperaba un diccionario YAML.")
+        datos.setdefault("etiquetas", {})
+        if isinstance(datos["etiquetas"], dict):
+            datos["etiquetas"].setdefault("alias", {})
         _validar(datos)
         try:
             json.dumps(datos, sort_keys=True, allow_nan=False)

@@ -9,6 +9,7 @@ import cv2
 
 from cobro_vision.adquisicion.camara import CamaraArchivo
 from cobro_vision.adquisicion.gestor_dataset import GestorDataset
+from cobro_vision.adquisicion.resumen_dataset import resumir_dataset
 from cobro_vision.adquisicion.validador_etiquetas import ValidadorEtiquetas
 from cobro_vision.configuracion import Configuracion
 from cobro_vision.controlador.fabrica import FabricaPipeline
@@ -37,6 +38,7 @@ def construir_analizador() -> argparse.ArgumentParser:
         ("validar-etiquetas", "Validar las etiquetas de LabelMe.", 4),
         ("construir-manifiesto", "Crear o actualizar el manifiesto del dataset.", 4),
         ("dividir", "Dividir el dataset por plato entre entrenamiento y prueba.", 4),
+        ("resumen-dataset", "Mostrar la cobertura del dataset por clase.", 4),
         ("demo", "Procesar una foto y mostrar su recibo.", 2),
         ("entrenar", "Entrenar y guardar el clasificador SVM.", 5),
         ("evaluar", "Evaluar el clasificador, la segmentación o el sistema.", 6),
@@ -60,6 +62,10 @@ def construir_analizador() -> argparse.ArgumentParser:
                 type=float,
                 required=True,
                 help="Fracción de prueba, p. ej. 0.2.",
+            )
+        elif nombre == "resumen-dataset":
+            subanalizador.add_argument(
+                "--csv", type=Path, help="Guardar también la tabla en esta ruta CSV."
             )
         elif nombre == "demo":
             subanalizador.add_argument(
@@ -93,7 +99,12 @@ def principal(argumentos: list[str] | None = None) -> int:
         return _ejecutar_app(opciones)
     if opciones.comando == "entrenar":
         return _ejecutar_entrenamiento(opciones)
-    if opciones.comando in ("validar-etiquetas", "construir-manifiesto", "dividir"):
+    if opciones.comando in (
+        "validar-etiquetas",
+        "construir-manifiesto",
+        "dividir",
+        "resumen-dataset",
+    ):
         return _ejecutar_dataset(opciones)
     if opciones.comando == "inicializar-catalogo":
         try:
@@ -164,7 +175,15 @@ def _ejecutar_dataset(opciones: argparse.Namespace) -> int:
                 f"Validación: {len(informe.errores)} errores, {len(informe.advertencias)} advertencias."
             )
             return 0 if informe.ok else 1
-        if opciones.comando == "construir-manifiesto":
+        if opciones.comando == "resumen-dataset":
+            tabla = resumir_dataset(config, catalogo)
+            if opciones.csv is not None:
+                opciones.csv.parent.mkdir(parents=True, exist_ok=True)
+                tabla.to_csv(
+                    opciones.csv, index=False, encoding="utf-8", lineterminator="\n"
+                )
+            print(tabla.to_string(index=False))
+        elif opciones.comando == "construir-manifiesto":
             manifiesto = gestor.construir_manifiesto()
             print(
                 f"Manifiesto guardado en {rutas['manifiesto']}: {len(manifiesto)} fotos."

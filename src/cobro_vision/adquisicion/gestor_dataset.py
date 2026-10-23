@@ -80,7 +80,7 @@ class GestorDataset:
         self._carpeta = Path(rutas["imagenes"]).resolve()
         self._ruta_manifiesto = Path(rutas["manifiesto"])
         self._catalogo = catalogo
-        self._lector = LectorLabelMe()
+        self._lector = LectorLabelMe(config, catalogo)
 
     def construir_manifiesto(self) -> pd.DataFrame:
         """Escanea las fotos y agrega registros sin cambiar splits ya asignados."""

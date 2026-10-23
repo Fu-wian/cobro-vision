@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from cobro_vision.adquisicion.gestor_dataset import GestorDataset, _escanear_archivos
-from cobro_vision.adquisicion.lector_labelme import _leer_etiquetado
+from cobro_vision.adquisicion.lector_labelme import _cargar_alias, _leer_etiquetado
 from cobro_vision.configuracion import Configuracion
 from cobro_vision.dominio.errores import EtiquetaInvalida
 from cobro_vision.dominio.modelos import Forma, Muestra
@@ -38,6 +38,7 @@ class ValidadorEtiquetas:
         self._catalogo = catalogo
         self._carpeta = Path(config.seccion("rutas")["imagenes"])
         self._minimo = config.seccion("entrenamiento")["min_instancias_por_clase"]
+        self._alias = _cargar_alias(config, catalogo)
 
     def validar(self, muestras: list[Muestra]) -> InformeValidacion:
         """Acumula cada error y advertencia, incluidas fotos que el lector rechaza."""
@@ -57,7 +58,7 @@ class ValidadorEtiquetas:
             if ruta.with_suffix("") not in por_nombre:
                 informe.advertencias.append(f"Imagen sin JSON (se ignora): {ruta}")
         for ruta_json in sorted(rutas_json):
-            etiquetado, errores = _leer_etiquetado(ruta_json)
+            etiquetado, errores = _leer_etiquetado(ruta_json, self._alias)
             informe.errores.extend(errores)
             if etiquetado is None:
                 continue

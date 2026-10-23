@@ -8,6 +8,8 @@ rutas:
   modelos: models
   modelo_actual: models/modelo_actual.joblib
   salidas: salidas
+etiquetas:
+  alias: {}                                 # etiqueta_origen: id_clase_destino
 imagen:
   lado_mayor: 640
   filtro: {tipo: mediana, tamano: 3}        # mediana | gaussiano | ninguno

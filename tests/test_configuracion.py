@@ -62,6 +62,15 @@ def test_hash_estable_y_selectivo(tmp_path: Path, datos_config: dict) -> None:
         ("semilla", 10**400),
         ("rutas.catalogo", 3),
         ("rutas.imagenes", ""),
+        ("etiquetas", None),
+        ("etiquetas.alias", []),
+        ("etiquetas.alias", None),
+        ("etiquetas.alias", {1: "pollo"}),
+        ("etiquetas.alias", {" ": "pollo"}),
+        ("etiquetas.alias", {"ave": ""}),
+        ("etiquetas.alias", {"ave": " "}),
+        ("etiquetas.alias", {"ave": 1}),
+        ("etiquetas.alias", {"ave": True}),
         ("imagen.lado_mayor", 0),
         ("imagen.filtro.tamano", 2),
         ("imagen.filtro.tipo", "otro"),
@@ -162,3 +171,23 @@ def test_variantes_validas_y_roi(tmp_path: Path, datos_config: dict) -> None:
     datos_config["imagen"]["correccion_color"]["roi"] = [0, 0, 20, 20]
     config = Configuracion.cargar(escribir_config(tmp_path, datos_config))
     assert config.seccion("imagen")["correccion_color"]["roi"] == [0, 0, 20, 20]
+
+
+@pytest.mark.parametrize("etiquetas", [None, {}])
+def test_alias_vacio_por_defecto_y_hash(
+    tmp_path: Path, datos_config: dict, etiquetas: dict | None
+) -> None:
+    """Configuraciones anteriores reciben alias vacíos y el hash refleja cambios."""
+    if etiquetas is None:
+        datos_config.pop("etiquetas")
+    else:
+        datos_config["etiquetas"] = etiquetas
+    config = Configuracion.cargar(escribir_config(tmp_path, datos_config))
+    assert config.seccion("etiquetas") == {"alias": {}}
+    datos_config["etiquetas"] = {"alias": {"ave": "pollo"}}
+    cambiado = Configuracion.cargar(escribir_config(tmp_path, datos_config))
+    assert cambiado.hash() != config.hash()
+    assert cambiado.hash(["imagen"]) == config.hash(["imagen"])
+    copia = cambiado.seccion("etiquetas")
+    copia["alias"]["ave"] = "ensalada"
+    assert cambiado.seccion("etiquetas")["alias"]["ave"] == "pollo"

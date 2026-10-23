@@ -76,6 +76,7 @@ def test_ayuda_desde_modulo(ruta_proyecto: Path) -> None:
         "validar-etiquetas",
         "construir-manifiesto",
         "dividir",
+        "resumen-dataset",
         "demo",
         "entrenar",
         "evaluar",

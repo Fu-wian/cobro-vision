@@ -515,6 +515,8 @@ rutas:
   modelos: models
   modelo_actual: models/modelo_actual.joblib
   salidas: salidas
+etiquetas:
+  alias: {}                                 # etiqueta_origen: id_clase_destino
 imagen:
   lado_mayor: 640
   filtro: {tipo: mediana, tamano: 3}        # mediana | gaussiano | ninguno
@@ -577,6 +579,10 @@ ui:
 ```
 
 `Configuracion.cargar` valida tipos y valores permitidos, y lanza `ConfiguracionInvalida` con el nombre del campo. `hash(["imagen","plato","segmentacion","caracteristicas"])` identifica la configuración de visión que se guarda con el modelo.
+
+`etiquetas.alias` es un diccionario de textos no vacíos; por ejemplo, `{arroz: arroz_amarillo, "Pollo asado": pollo}`. Si faltan `etiquetas` o `alias` en una configuración anterior, se usa `{}`. `LectorLabelMe` y `ValidadorEtiquetas` sustituyen cada etiqueta una sola vez, antes de comprobar las clases o contar ejemplos. Las etiquetas sin alias se conservan; los alias no se encadenan y nunca se reescriben los JSON. Al preparar el lector o el validador con la configuración, cada destino debe existir entre las clases activas del catálogo; en otro caso se lanza `ConfiguracionInvalida`, incluso si el alias no aparece en ningún JSON. Esta comprobación se hace al usar el dataset para permitir inicializar primero el catálogo. `GestorDataset` entrega las muestras con etiquetas normalizadas a entrenamiento y a las demás herramientas. Los overrides del manifiesto siguen usando `id_clase` canónicos.
+
+El constructor opcional `LectorLabelMe(config, catalogo)` permite proporcionar los alias sin cambiar `leer(ruta_json)`; `LectorLabelMe()` conserva el comportamiento sin alias. Si se proporciona solo `config`, se consulta el catálogo de `rutas.catalogo`.
 
 ### 5.5 Salidas
 
@@ -708,11 +714,22 @@ Implementada con `argparse`. Todos aceptan `--config` (por defecto `config.yaml`
 | `validar-etiquetas` | Corre `ValidadorEtiquetas`; imprime errores y advertencias; código ≠ 0 si hay errores |
 | `construir-manifiesto` | Escanea `data/raw` y crea o actualiza `manifest.csv` |
 | `dividir --prueba 0.2` | Asigna `split` por `plato_id` con la semilla |
+| `resumen-dataset [--csv RUTA]` | Lee el manifiesto y los JSON; muestra cobertura por clase y opcionalmente guarda la misma tabla en CSV |
 | `demo --imagen RUTA [--debug]` | Procesa una foto, imprime el recibo y guarda imágenes de depuración |
 | `entrenar [--modo ...]` | Entrena y guarda el SVM |
 | `evaluar clasificador\|segmentacion\|sistema` | Evalúa sobre `split == test` (sección 10) |
 | `ablacion` | Corre las variantes de configuración y llena `experimentos/resultados.csv` |
 | `app` | Abre la ventana del cajero (CustomTkinter) |
+
+`resumen-dataset` requiere un manifiesto existente (si falta, indica ejecutar `construir-manifiesto`). No cambia sus splits ni los JSON. La tabla contiene `id_clase`, `platos_total`, `platos_train`, `platos_test`, `fotos`, `poligonos` y `estado`, con una fila por clase activa del catálogo en orden alfabético, incluido `fondo` y las clases con cero ejemplos:
+
+- Los platos se cuentan por `plato_id` distinto, aunque tengan varias fotos o aparezcan en varias sesiones. Los splits vacíos aportan al total, pero no a train/test. Se rechaza cualquier `plato_id` presente tanto en train como en test.
+- Cada foto cuenta una vez por clase presente; cada forma cuenta como un polígono, incluidos los rectángulos convertidos a cuatro puntos. Se aplican los alias configurados antes de contar, de modo que distintas etiquetas de origen pueden sumar a una misma clase.
+- Se cuentan las anotaciones visibles de los JSON de las fotos del manifiesto; `contenido_esperado_override` no añade ejemplos. Las fotos sin JSON se omiten con una advertencia y las fotos fuera del manifiesto no se incluyen. Un JSON inválido o una etiqueta fuera del catálogo produce código de salida distinto de cero.
+- `estado` contiene `FALTA` si hay menos de 3 platos en train y `POCO` si hay menos de 25 platos en total; las marcas son independientes y pueden aparecer juntas (`FALTA POCO`). Si no aplica ninguna, queda vacío. Son advertencias de cobertura: no causan un código de salida de error.
+- `--csv RUTA` exporta las mismas columnas y filas en UTF-8, sin índice; crea la carpeta de destino si hace falta.
+
+Ejemplo: `python -m cobro_vision resumen-dataset --config config.yaml --csv salidas/resumen_dataset.csv`.
 
 ---
 
