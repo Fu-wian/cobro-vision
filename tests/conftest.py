@@ -51,6 +51,9 @@ def datos_config(ruta_proyecto: Path, ruta_semilla_catalogo: Path) -> dict:
     """Carga la configuración y sustituye la semilla por el CSV de prueba."""
     datos = yaml.safe_load((ruta_proyecto / "config.yaml").read_text(encoding="utf-8"))
     datos["rutas"]["semilla_catalogo"] = str(ruta_semilla_catalogo)
+    # Los alias del menú de ejemplo no pertenecen al catálogo sintético.
+    # Las pruebas de alias proporcionan explícitamente sus propias variantes.
+    datos["etiquetas"] = {"alias": {}}
     return datos
 
 

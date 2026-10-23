@@ -1,6 +1,7 @@
 """Interfaz de línea de comandos del prototipo."""
 
 import argparse
+import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -99,6 +100,8 @@ def principal(argumentos: list[str] | None = None) -> int:
         return _ejecutar_app(opciones)
     if opciones.comando == "entrenar":
         return _ejecutar_entrenamiento(opciones)
+    if opciones.comando == "evaluar":
+        return _ejecutar_evaluacion(opciones)
     if opciones.comando in (
         "validar-etiquetas",
         "construir-manifiesto",
@@ -129,6 +132,30 @@ def principal(argumentos: list[str] | None = None) -> int:
         return 0
     print(f"No implementado aún (etapa {opciones.etapa})")
     return 2
+
+
+def _ejecutar_evaluacion(opciones: argparse.Namespace) -> int:
+    try:
+        from cobro_vision.evaluacion.evaluador_clasificador import EvaluadorClasificador
+        from cobro_vision.evaluacion.evaluador_segmentacion import EvaluadorSegmentacion
+        from cobro_vision.evaluacion.evaluador_sistema import EvaluadorSistema
+
+        config = Configuracion.cargar(opciones.config)
+        evaluadores = {
+            "clasificador": EvaluadorClasificador,
+            "segmentacion": EvaluadorSegmentacion,
+            "sistema": EvaluadorSistema,
+        }
+        evaluador = evaluadores[opciones.objetivo](config)
+        metricas = evaluador.evaluar()
+        print(json.dumps(metricas, ensure_ascii=False, indent=2, allow_nan=False))
+        print(f"Evaluación sobre test guardada en {evaluador.carpeta_salida}")
+        return 0
+    except (CobroVisionError, OSError, ValueError, sqlite3.Error, cv2.error) as error:
+        logging.getLogger(__name__).error(
+            "No se pudo evaluar %s: %s", opciones.objetivo, error
+        )
+        return 1
 
 
 def _ejecutar_entrenamiento(opciones: argparse.Namespace) -> int:

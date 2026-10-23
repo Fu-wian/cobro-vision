@@ -15,9 +15,6 @@ from cobro_vision.controlador.controlador import ControladorTransaccion
 @pytest.mark.parametrize(
     ("argumentos", "etapa"),
     [
-        (["evaluar", "clasificador"], 6),
-        (["evaluar", "segmentacion"], 6),
-        (["evaluar", "sistema"], 6),
         (["ablacion"], 7),
     ],
 )

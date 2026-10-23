@@ -8,6 +8,7 @@ from cobro_vision.adquisicion.mapa_etiquetas import MapaEtiquetas
 from cobro_vision.caracteristicas.color import ExtractorHistogramaColor
 from cobro_vision.caracteristicas.constructor import ConstructorVector
 from cobro_vision.caracteristicas.textura import ExtractorTextura
+from cobro_vision.clasificacion.base import Clasificador
 from cobro_vision.clasificacion.entrenador import EntrenadorModelo
 from cobro_vision.clasificacion.falso import ClasificadorFalso
 from cobro_vision.clasificacion.instancias import ConstructorInstancias
@@ -54,7 +55,20 @@ class FabricaPipeline:
     @staticmethod
     def crear(config: Configuracion) -> ControladorTransaccion:
         """Ensambla las variantes registradas sin entrenar ningún clasificador."""
-        camara_config = config.seccion("camara")
+        return FabricaPipeline._crear_controlador(config, config.seccion("camara"))
+
+    @staticmethod
+    def crear_evaluacion(config: Configuracion) -> ControladorTransaccion:
+        """Usa solo archivos del dataset, incluso si la caja tiene una cámara USB."""
+        return FabricaPipeline._crear_controlador(
+            config,
+            {"clase": "CamaraArchivo", "carpeta": config.seccion("rutas")["imagenes"]},
+        )
+
+    @staticmethod
+    def _crear_controlador(
+        config: Configuracion, camara_config: dict
+    ) -> ControladorTransaccion:
         clasificacion = config.seccion("clasificador")
         cobro = config.seccion("cobro")
         camara_clase = FabricaPipeline._elegir(
@@ -62,9 +76,6 @@ class FabricaPipeline:
         )
         preprocesador, detector, segmentador, constructor = (
             FabricaPipeline._crear_vision(config)
-        )
-        clasificador_clase = FabricaPipeline._elegir(
-            FabricaPipeline._clasificadores, clasificacion["tipo"], "clasificador.tipo"
         )
         politica_clase = FabricaPipeline._elegir(
             FabricaPipeline._politicas, cobro["politica"], "cobro.politica"
@@ -75,19 +86,7 @@ class FabricaPipeline:
         # de ejemplo para permitir demo; uno existente conserva sus precios.
         if not catalogo.ruta_db.exists():
             catalogo.inicializar(Path(rutas["semilla_catalogo"]))
-        if clasificacion["tipo"] == "svm":
-            ruta_modelo = Path(rutas["modelo_actual"])
-            if not ruta_modelo.is_file():
-                raise FileNotFoundError(
-                    f"No existe el modelo SVM: {ruta_modelo}. "
-                    "Ejecute python -m cobro_vision entrenar."
-                )
-            clasificador = clasificador_clase.cargar(
-                ruta_modelo, constructor, clasificacion["umbral_confianza"]
-            )
-        else:
-            clasificador = clasificador_clase(catalogo.clases_validas(), config.semilla)
-            clasificador.nombres_caracteristicas = constructor.nombres()
+        clasificador = FabricaPipeline.crear_clasificador(config, constructor, catalogo)
         politica = (
             politica_clase(**cobro["por_plato"])
             if cobro["politica"] == "CobroPorPlato"
@@ -116,13 +115,46 @@ class FabricaPipeline:
         )
 
     @staticmethod
+    def crear_clasificador(
+        config: Configuracion,
+        constructor: ConstructorVector,
+        catalogo: CatalogoAlimentos,
+    ) -> Clasificador:
+        """Carga el modelo configurado sin entrenar ni abrir una cámara."""
+        clasificacion = config.seccion("clasificador")
+        clasificador_clase = FabricaPipeline._elegir(
+            FabricaPipeline._clasificadores, clasificacion["tipo"], "clasificador.tipo"
+        )
+        if clasificacion["tipo"] == "svm":
+            rutas = config.seccion("rutas")
+            ruta_modelo = Path(rutas["modelo_actual"])
+            if not ruta_modelo.is_file():
+                raise FileNotFoundError(
+                    f"No existe el modelo SVM: {ruta_modelo}. "
+                    "Ejecute python -m cobro_vision entrenar."
+                )
+            clasificador = clasificador_clase.cargar(
+                ruta_modelo, constructor, clasificacion["umbral_confianza"]
+            )
+        else:
+            clasificador = clasificador_clase(catalogo.clases_validas(), config.semilla)
+            clasificador.nombres_caracteristicas = constructor.nombres()
+        return clasificador
+
+    @staticmethod
     def crear_entrenador(config: Configuracion) -> EntrenadorModelo:
         """Prepara entrenamiento sin cargar un modelo anterior ni abrir la cámara."""
+        instancias = FabricaPipeline.crear_constructor_instancias(config)
+        return EntrenadorModelo(config, instancias, instancias.constructor)
+
+    @staticmethod
+    def crear_constructor_instancias(config: Configuracion) -> ConstructorInstancias:
+        """Comparte visión y etiquetas entre entrenamiento y evaluación."""
         preprocesador, detector, segmentador, constructor = (
             FabricaPipeline._crear_vision(config)
         )
         catalogo = CatalogoAlimentos(Path(config.seccion("rutas")["catalogo"]))
-        instancias = ConstructorInstancias(
+        return ConstructorInstancias(
             config,
             preprocesador,
             detector,
@@ -130,7 +162,6 @@ class FabricaPipeline:
             constructor,
             MapaEtiquetas(catalogo.clases_validas()),
         )
-        return EntrenadorModelo(config, instancias, constructor)
 
     @staticmethod
     def _crear_vision(
