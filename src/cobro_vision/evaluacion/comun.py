@@ -45,6 +45,7 @@ def guardar_evaluacion(
     matrices: dict[str, pd.DataFrame] | None = None,
 ) -> Path:
     """Escribe JSON, CSV y matrices PNG sin depender de una pantalla."""
+    metricas["clasificador"] = config.seccion("clasificador")["tipo"]
     carpeta = (
         Path(config.seccion("rutas")["salidas"])
         / "evaluacion"

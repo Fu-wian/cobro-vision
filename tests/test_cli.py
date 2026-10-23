@@ -48,6 +48,8 @@ def test_config_antes_o_despues_del_comando(argumentos: list[str]) -> None:
         ["dividir"],
         ["evaluar", "desconocido"],
         ["entrenar", "--modo", "desconocido"],
+        ["entrenar", "--permitir-falso"],
+        ["demo", "--imagen", "plato.png", "--permitir-falso"],
     ],
 )
 def test_rechazar_argumentos_invalidos(argumentos: list[str]) -> None:

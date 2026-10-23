@@ -14,7 +14,7 @@ from cobro_vision.adquisicion.resumen_dataset import resumir_dataset
 from cobro_vision.adquisicion.validador_etiquetas import ValidadorEtiquetas
 from cobro_vision.configuracion import Configuracion
 from cobro_vision.controlador.fabrica import FabricaPipeline
-from cobro_vision.dominio.errores import CobroVisionError
+from cobro_vision.dominio.errores import CobroVisionError, ConfiguracionInvalida
 from cobro_vision.dominio.modelos import Transaccion
 from cobro_vision.dominio.utilidades import formatear_dinero
 from cobro_vision.explicacion.depuracion import guardar_depuracion
@@ -87,6 +87,11 @@ def construir_analizador() -> argparse.ArgumentParser:
                 choices=("clasificador", "segmentacion", "sistema"),
                 help="Componente que se evaluará.",
             )
+            subanalizador.add_argument(
+                "--permitir-falso",
+                action="store_true",
+                help="Permitir clasificador.tipo=falso exclusivamente para pruebas.",
+            )
     return analizador
 
 
@@ -141,6 +146,18 @@ def _ejecutar_evaluacion(opciones: argparse.Namespace) -> int:
         from cobro_vision.evaluacion.evaluador_sistema import EvaluadorSistema
 
         config = Configuracion.cargar(opciones.config)
+        if config.seccion("clasificador")["tipo"] == "falso":
+            if not opciones.permitir_falso:
+                raise ConfiguracionInvalida(
+                    'No se puede evaluar con clasificador.tipo en "falso". '
+                    "Primero hay que entrenar un SVM con python -m cobro_vision entrenar "
+                    'y poner clasificador.tipo en "svm" en la configuración. '
+                    "Use --permitir-falso solo para pruebas."
+                )
+            logging.getLogger(__name__).warning(
+                "AVISO: evaluación con clasificador falso, solo para pruebas; "
+                "las métricas no representan el rendimiento de un SVM entrenado."
+            )
         evaluadores = {
             "clasificador": EvaluadorClasificador,
             "segmentacion": EvaluadorSegmentacion,

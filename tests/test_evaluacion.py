@@ -1,5 +1,6 @@
 """Evaluación exclusivamente con fotos y etiquetas sintéticas, sin ajustes."""
 
+import json
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -27,20 +28,31 @@ from cobro_vision.negocio.catalogo import CatalogoAlimentos
 from cobro_vision.segmentacion.base import _crear_region
 
 
+@pytest.fixture(autouse=True)
+def ruta_registro_temporal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """Aísla también el registro por defecto que utilizan los comandos reales."""
+    monkeypatch.chdir(tmp_path)
+    return tmp_path / "experimentos" / "resultados.csv"
+
+
 @pytest.fixture
 def config_prueba(
-    config_entrenamiento: Configuracion, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    config_entrenamiento: Configuracion, tmp_path: Path
 ) -> Configuracion:
     """Aísla las salidas y el registro; no entrena ni carga ningún dato real."""
     datos = deepcopy(config_entrenamiento._datos)
+    datos["clasificador"]["tipo"] = "falso"
     datos["rutas"]["salidas"] = str(tmp_path / "salidas")
     datos["camara"]["carpeta"] = datos["rutas"]["imagenes"]
-    monkeypatch.chdir(tmp_path)
     return Configuracion(datos)
 
 
 def test_clasificador_modelo_persistido_y_determinismo(
-    config_prueba: Configuracion, catalogo: CatalogoAlimentos
+    config_prueba: Configuracion,
+    catalogo: CatalogoAlimentos,
+    ruta_registro_temporal: Path,
 ) -> None:
     """El evaluador usa el modo guardado y solo test; conserva modelo, YAML y splits."""
     entrenador = FabricaPipeline.crear_entrenador(config_prueba)
@@ -111,7 +123,7 @@ def test_clasificador_modelo_persistido_y_determinismo(
         ) as imagen:
             assert imagen.width > 0 and imagen.height > 0
     assert originales == (modelo.read_bytes(), manifiesto.read_bytes(), config.hash())
-    assert len(pd.read_csv("experimentos/resultados.csv")) == 2
+    assert len(pd.read_csv(ruta_registro_temporal)) == 2
 
 
 def test_tabla_umbral_incluye_igualdad_y_no_selecciona_umbral(
@@ -337,6 +349,8 @@ def test_cli_tres_evaluaciones_con_svm_sintetico(
     catalogo: CatalogoAlimentos,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    ruta_registro_temporal: Path,
 ) -> None:
     """Los comandos reales generan informes y tres filas sin entrenar al evaluar."""
     FabricaPipeline.crear_entrenador(config_prueba).entrenar(
@@ -374,6 +388,8 @@ def test_cli_tres_evaluaciones_con_svm_sintetico(
             assert principal(["evaluar", objetivo, "--config", str(ruta)]) == 0
             salida = capsys.readouterr().out
             assert "test" in salida
+            metricas, _ = json.JSONDecoder().raw_decode(salida)
+            assert metricas["clasificador"] == "svm"
             if objetivo == "sistema":
                 for clave in (
                     "plato_exacto",
@@ -396,7 +412,10 @@ def test_cli_tres_evaluaciones_con_svm_sintetico(
         for carpeta in carpetas
     )
     assert list((tmp_path / "salidas" / "evaluacion").rglob("*.png"))
-    assert len(pd.read_csv("experimentos/resultados.csv")) == 3
+    registro = pd.read_csv(ruta_registro_temporal)
+    assert len(registro) == 3
+    assert all(json.loads(fila)["clasificador"] == "svm" for fila in registro["metricas"])
+    assert "clasificador falso" not in caplog.text
     assert not (tmp_path / "salidas" / "transacciones.csv").exists()
 
 
@@ -429,12 +448,73 @@ def test_exige_manifiesto_existente(config_prueba: Configuracion) -> None:
         cargar_prueba(config_prueba)
 
 
+@pytest.mark.parametrize(
+    ("objetivo", "evaluador"),
+    [
+        ("clasificador", EvaluadorClasificador),
+        ("segmentacion", EvaluadorSegmentacion),
+        ("sistema", EvaluadorSistema),
+    ],
+)
+def test_cli_rechaza_clasificador_falso_antes_de_evaluar(
+    ruta_config_temporal: Path,
+    objetivo: str,
+    evaluador: type,
+    caplog: pytest.LogCaptureFixture,
+    ruta_registro_temporal: Path,
+) -> None:
+    """El falso se rechaza incluso sin dataset, sin crear informes ni filas."""
+    datos = yaml.safe_load(ruta_config_temporal.read_text(encoding="utf-8"))
+    datos["clasificador"]["tipo"] = "falso"
+    ruta_config_temporal.write_text(yaml.safe_dump(datos), encoding="utf-8")
+    with patch.object(evaluador, "evaluar") as evaluar:
+        assert principal(["evaluar", objetivo, "--config", str(ruta_config_temporal)]) == 1
+    evaluar.assert_not_called()
+    assert 'clasificador.tipo en "falso"' in caplog.text
+    assert "entrenar un SVM" in caplog.text
+    assert 'clasificador.tipo en "svm"' in caplog.text
+    assert "--permitir-falso solo para pruebas" in caplog.text
+    assert not ruta_registro_temporal.exists()
+    assert not Path(datos["rutas"]["salidas"]).exists()
+
+
+@pytest.mark.parametrize("objetivo", ["clasificador", "segmentacion", "sistema"])
+def test_cli_permitir_falso_avisa_y_marca_json_y_registro(
+    config_prueba: Configuracion,
+    objetivo: str,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+    ruta_registro_temporal: Path,
+) -> None:
+    """La excepción de pruebas deja el tipo falso en todas las salidas JSON."""
+    ruta = tmp_path / "evaluacion.yaml"
+    ruta.write_text(yaml.safe_dump(config_prueba._datos), encoding="utf-8")
+    assert (
+        principal(["evaluar", objetivo, "--config", str(ruta), "--permitir-falso"])
+        == 0
+    )
+    assert "AVISO" in caplog.text
+    assert "clasificador falso, solo para pruebas" in caplog.text
+    metricas, _ = json.JSONDecoder().raw_decode(capsys.readouterr().out)
+    assert metricas["clasificador"] == "falso"
+    informes = list((tmp_path / "salidas" / "evaluacion").glob("*/metricas.json"))
+    assert len(informes) == 1
+    informe = json.loads(informes[0].read_text(encoding="utf-8"))
+    assert informe["metricas"] == metricas
+    registro = pd.read_csv(ruta_registro_temporal)
+    assert len(registro) == 1
+    assert registro.iloc[0]["nombre"] == objetivo
+    assert json.loads(registro.iloc[0]["metricas"]) == metricas
+
+
 @pytest.mark.parametrize("objetivo", ["clasificador", "segmentacion", "sistema"])
 def test_cli_error_legible_sin_test(
     config_prueba: Configuracion,
     objetivo: str,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    ruta_registro_temporal: Path,
 ) -> None:
     """Un test vacío retorna uno y deja una explicación sin traceback."""
     ruta = tmp_path / "evaluacion.yaml"
@@ -443,9 +523,12 @@ def test_cli_error_legible_sin_test(
     tabla = pd.read_csv(manifiesto)
     tabla["split"] = ""
     tabla.to_csv(manifiesto, index=False)
-    assert principal(["evaluar", objetivo, "--config", str(ruta)]) == 1
+    assert (
+        principal(["evaluar", objetivo, "--config", str(ruta), "--permitir-falso"])
+        == 1
+    )
     assert "No hay muestras test" in caplog.text
-    assert not Path("experimentos/resultados.csv").exists()
+    assert not ruta_registro_temporal.exists()
 
 
 def test_sistema_no_abre_camara_usb(config_prueba: Configuracion) -> None:
@@ -462,6 +545,7 @@ def test_cli_modelo_ausente_no_entrena_ni_usa_clasificador_falso(
     objetivo: str,
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
+    ruta_registro_temporal: Path,
 ) -> None:
     """La ausencia del SVM se explica sin cambiar el tipo de clasificador."""
     datos = deepcopy(config_prueba._datos)
@@ -474,4 +558,4 @@ def test_cli_modelo_ausente_no_entrena_ni_usa_clasificador_falso(
         assert principal(["evaluar", objetivo, "--config", str(ruta)]) == 1
     assert "No existe el modelo SVM" in caplog.text
     assert not Path(datos["rutas"]["modelo_actual"]).exists()
-    assert not Path("experimentos/resultados.csv").exists()
+    assert not ruta_registro_temporal.exists()

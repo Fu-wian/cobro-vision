@@ -4,12 +4,11 @@ from collections import Counter
 from copy import deepcopy
 
 import numpy as np
-from scipy.ndimage import label
+from scipy.ndimage import find_objects, label
 
 from cobro_vision.dominio.modelos import ID_FONDO, Region, ResultadoClasificacion
 from cobro_vision.dominio.utilidades import _validar_mascara, mapa_desde_regiones
 from cobro_vision.negocio.catalogo import CatalogoAlimentos
-from cobro_vision.segmentacion.base import _crear_region
 
 
 class Posprocesador:
@@ -44,17 +43,21 @@ class Posprocesador:
         margenes = np.zeros(mascara_plato.shape, dtype=np.float64)
         clases = sorted({r.resultado.id_clase for r in regiones if r.resultado})
         indices = {clase: i + 1 for i, clase in enumerate(clases)}
+        alimentos = {}
         for region in regiones:
             if region.resultado is None:
                 raise ValueError("Todas las regiones deben estar clasificadas.")
-            self._catalogo.obtener(region.resultado.id_clase)
+            clase = region.resultado.id_clase
+            if clase not in alimentos:
+                alimentos[clase] = self._catalogo.obtener(clase)
             mascara = mapa_origen == region.id
             etiquetas[mascara] = indices[region.resultado.id_clase]
             margenes[mascara] = region.resultado.score
         area_plato = int(mascara_plato.sum())
         minimo = self._config["componente_minimo_frac"] * area_plato
+        fusiones: dict[int, list[Region]] = {}
         while True:
-            componentes = self._fusionar(etiquetas, margenes, clases)
+            componentes = self._fusionar(etiquetas, margenes, clases, fusiones)
             pequenas = [
                 r
                 for r in componentes
@@ -63,12 +66,21 @@ class Posprocesador:
             if not pequenas:
                 break
             pequena = min(pequenas, key=lambda r: (r.area, r.id))
-            mapa = mapa_desde_regiones(componentes, mascara_plato.shape)
-            fronteras = self._fronteras(pequena.mascara, mapa)
-            fronteras_clase: Counter[str] = Counter()
-            for region in componentes:
-                if region.id in fronteras and region.resultado.id_clase != ID_FONDO:
-                    fronteras_clase[region.resultado.id_clase] += fronteras[region.id]
+            x0, y0, x1, y1 = pequena.bbox
+            # El halo conserva todos los bordes de vecindad 4, incluso en el borde.
+            recorte = (
+                slice(max(0, y0 - 1), min(etiquetas.shape[0], y1 + 1)),
+                slice(max(0, x0 - 1), min(etiquetas.shape[1], x1 + 1)),
+            )
+            fronteras = self._fronteras(pequena.mascara[recorte], etiquetas[recorte])
+            # Contar etiquetas suma directamente las fronteras de igual clase.
+            fronteras_clase = Counter(
+                {
+                    clases[i - 1]: n
+                    for i, n in fronteras.items()
+                    if clases[i - 1] != ID_FONDO
+                }
+            )
             # TODO(equipo): empates de frontera se resuelven por id_clase;
             # se absorbe primero el componente menor y se fusiona tras cada cambio.
             destino = min(
@@ -77,6 +89,10 @@ class Posprocesador:
                 default=None,
             )
             etiquetas[pequena.mascara] = indices[destino] if destino else 0
+            # Solo cambian las componentes de la clase de origen y la de destino.
+            fusiones.pop(indices[pequena.resultado.id_clase], None)
+            if destino is not None:
+                fusiones.pop(indices[destino], None)
             self.eventos.append(
                 {
                     "accion": "absorcion" if destino else "eliminar_componente",
@@ -111,8 +127,7 @@ class Posprocesador:
             (
                 clase
                 for clase in areas
-                if clase not in descartadas
-                and self._catalogo.obtener(clase).categoria == "proteina"
+                if clase not in descartadas and alimentos[clase].categoria == "proteina"
             ),
             key=lambda clase: (-areas[clase], clase),
         )
@@ -135,20 +150,45 @@ class Posprocesador:
 
     @staticmethod
     def _fusionar(
-        etiquetas: np.ndarray, margenes: np.ndarray, clases: list[str]
+        etiquetas: np.ndarray,
+        margenes: np.ndarray,
+        clases: list[str],
+        fusiones: dict[int, list[Region]],
     ) -> list[Region]:
         regiones = []
         for indice, clase in enumerate(clases, 1):
-            # La estructura por defecto de scipy es la cruz de vecindad 4.
-            componentes, cantidad = label(etiquetas == indice)
-            for componente in range(1, cantidad + 1):
-                mascara = componentes == componente
-                region = _crear_region(len(regiones) + 1, mascara)
-                region.resultado = ResultadoClasificacion(
-                    clase,
-                    float(margenes[mascara].mean()),
-                    False,
-                )
+            if indice not in fusiones:
+                # La estructura por defecto de scipy es la cruz de vecindad 4.
+                componentes, cantidad = label(etiquetas == indice)
+                areas = np.bincount(componentes.ravel(), minlength=cantidad + 1)
+                fusiones[indice] = []
+                # Dos recorridos por clase sustituyen nonzero/sum por componente.
+                for componente, caja in enumerate(
+                    find_objects(componentes, cantidad) if cantidad else [], 1
+                ):
+                    filas, columnas = caja
+                    mascara = componentes == componente
+                    fusiones[indice].append(
+                        Region(
+                            id=0,
+                            mascara=mascara,
+                            bbox=(
+                                columnas.start,
+                                filas.start,
+                                columnas.stop,
+                                filas.stop,
+                            ),
+                            area=int(areas[componente]),
+                            resultado=ResultadoClasificacion(
+                                clase,
+                                # Mismo orden de píxeles y misma reducción float64.
+                                float(margenes[mascara].mean()),
+                                False,
+                            ),
+                        )
+                    )
+            for region in fusiones[indice]:
+                region.id = len(regiones) + 1
                 regiones.append(region)
         return regiones
 
