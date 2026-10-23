@@ -1,20 +1,23 @@
 id_clase,nombre,categoria,precio_centavos,activo
-arroz_blanco,Arroz blanco,base,25,1
-arroz_guandu,Arroz con guandú,base,25,1
+arroz_blanco,Arroz blanco o arroz con guandu,base,25,1
+arroz_guandu,Arroz con guandú,base,25,0
 arroz_amarillo,Arroz amarillo,base,25,1
-frijoles,Frijoles,base,25,1
-lenteja,Lenteja,base,25,1
-poroto,Porotos,base,25,1
-pollo_asado,Pollo asado,proteina,100,1
-lomo_salsa,Lomo En Salsa,proteina,100,1
-pollo_guisado,Pollo guisado,proteina,100,1
+pasta,chowmein o espagueti,base,100,1
+frijoles,Frijoles,base,25,0
+lenteja,Lenteja,base,25,0
+poroto,Porotos,base,25,0
+pollo,Pollo asado o guisado,proteina,100,1
+pollo_asado,Pollo asado,proteina,100,0
+lomo_salsa,Lomo En Salsa,proteina,100,0
+pollo_guisado,Pollo guisado,proteina,100,0
 pescado_frito,Pescado frito,proteina,100,1
-carne_guisada,Carne guisada,proteina,100,1
+carne_guisada,Carne guisada o lomo en salsa o puerco guisado,proteina,100,1
 tajada,Rebanada de tajada,acompanante,25,1
-chowmein,Chowmein,base,100,1
+chowmein,Chowmein,base,100,0
 ensalada,Ensalada,ensalada,50,1
-ensalada_pepino,Ensalada de Pepino,ensalada,50,1
-espagueti,Espagueti,base,75,1
-ensalada_tomate,Ensalada de tomate,ensalada, 50,1
-puerco_guisado, Puerco Guisado,proteina, 100,1
+ensalada_pepino,Ensalada de Pepino,ensalada,50,0
+espagueti,Espagueti,base,100,0
+ensalada_tomate,Ensalada de tomate,ensalada,50,0
+puerco_guisado,Puerco Guisado,proteina,100,0
+menestra,frijoles o poroto o lenteja,base,25,1
 fondo,"Fondo (plato, mesa, sombras)",fondo,0,1

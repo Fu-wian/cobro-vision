@@ -9,7 +9,19 @@ rutas:
   modelo_actual: models/modelo_actual.joblib
   salidas: salidas
 etiquetas:
-  alias: {}                                 # etiqueta_origen: id_clase_destino
+  alias:
+    ensalada_pepino: ensalada
+    ensalada_tomate: ensalada
+    frijoles: menestra
+    poroto: menestra
+    lenteja: menestra
+    pollo_asado: pollo
+    pollo_guisado: pollo
+    lomo_salsa: carne_guisada
+    puerco_guisado: carne_guisada
+    chowmein: pasta
+    espagueti: pasta
+    arroz_guandu: arroz_blanco                                 # etiqueta_origen: id_clase_destino
 imagen:
   lado_mayor: 640
   filtro: {tipo: mediana, tamano: 3}        # mediana | gaussiano | ninguno
