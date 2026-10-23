@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Cobro Vision: Cajero",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cobro_vision",
+      "args": ["app"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 """Recursos compartidos por las pruebas del repositorio."""
 
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +9,7 @@ import pytest
 import yaml
 from helpers import escribir_dataset_sintetico, generar_plato_sintetico
 
+from cobro_vision.adquisicion.gestor_dataset import GestorDataset
 from cobro_vision.configuracion import Configuracion
 from cobro_vision.controlador.controlador import ControladorTransaccion
 from cobro_vision.controlador.fabrica import FabricaPipeline
@@ -81,6 +84,33 @@ def config_dataset(
     ruta = tmp_path / "dataset.yaml"
     ruta.write_text(yaml.safe_dump(datos_config), encoding="utf-8")
     return Configuracion.cargar(ruta)
+
+
+@pytest.fixture
+def config_entrenamiento(
+    config_dataset: Configuracion,
+    catalogo: CatalogoAlimentos,
+    tmp_path: Path,
+) -> Configuracion:
+    """Usa solo los platos artificiales; etiqueta también todo el fondo conocido."""
+    datos = config_dataset._datos
+    catalogo.agregar(replace(catalogo.obtener("pescado_frito"), activo=False))
+    for ruta in Path(datos["rutas"]["imagenes"]).rglob("*.json"):
+        etiquetas = json.loads(ruta.read_text(encoding="utf-8"))
+        fondo = etiquetas["shapes"].pop()
+        fondo["points"] = [
+            [0, 0],
+            [etiquetas["imageWidth"] - 1, etiquetas["imageHeight"] - 1],
+        ]
+        etiquetas["shapes"].insert(0, fondo)
+        ruta.write_text(json.dumps(etiquetas), encoding="utf-8")
+    datos["rutas"]["modelos"] = str(tmp_path / "models")
+    datos["rutas"]["modelo_actual"] = str(tmp_path / "models" / "modelo_actual.joblib")
+    datos["plato"]["metodo"] = "imagen_completa"
+    datos["clasificador"]["busqueda"] = {"C": [1, 10], "gamma": ["scale"], "folds": 3}
+    config = Configuracion(datos)
+    GestorDataset(config, catalogo).dividir(0.2, config.semilla)
+    return config
 
 
 @pytest.fixture

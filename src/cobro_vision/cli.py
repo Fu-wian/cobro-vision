@@ -8,6 +8,8 @@ from pathlib import Path
 import cv2
 
 from cobro_vision.adquisicion.camara import CamaraArchivo
+from cobro_vision.adquisicion.gestor_dataset import GestorDataset
+from cobro_vision.adquisicion.validador_etiquetas import ValidadorEtiquetas
 from cobro_vision.configuracion import Configuracion
 from cobro_vision.controlador.fabrica import FabricaPipeline
 from cobro_vision.dominio.errores import CobroVisionError
@@ -89,6 +91,10 @@ def principal(argumentos: list[str] | None = None) -> int:
         return _ejecutar_demo(opciones)
     if opciones.comando == "app":
         return _ejecutar_app(opciones)
+    if opciones.comando == "entrenar":
+        return _ejecutar_entrenamiento(opciones)
+    if opciones.comando in ("validar-etiquetas", "construir-manifiesto", "dividir"):
+        return _ejecutar_dataset(opciones)
     if opciones.comando == "inicializar-catalogo":
         try:
             config = Configuracion.cargar(opciones.config)
@@ -112,6 +118,68 @@ def principal(argumentos: list[str] | None = None) -> int:
         return 0
     print(f"No implementado aún (etapa {opciones.etapa})")
     return 2
+
+
+def _ejecutar_entrenamiento(opciones: argparse.Namespace) -> int:
+    try:
+        config = Configuracion.cargar(opciones.config)
+        if opciones.modo is not None:
+            datos = config._datos.copy()
+            datos["entrenamiento"] = {
+                **config.seccion("entrenamiento"),
+                "modo": opciones.modo,
+            }
+            config = Configuracion(datos)
+        catalogo = CatalogoAlimentos(Path(config.seccion("rutas")["catalogo"]))
+        gestor = GestorDataset(config, catalogo)
+        muestras = gestor.cargar_muestras()
+        entrenador = FabricaPipeline.crear_entrenador(config)
+        modelo = entrenador.entrenar(muestras)
+        print(
+            f"SVM entrenado ({modelo.meta['modo']}): "
+            f"F1 macro CV = {modelo.meta['metricas_cv']['f1_macro_media']:.4f}. "
+            f"Modelo actual: {config.seccion('rutas')['modelo_actual']}"
+        )
+        return 0
+    except (CobroVisionError, OSError, ValueError, sqlite3.Error, cv2.error) as error:
+        logging.getLogger(__name__).error("No se pudo entrenar el SVM: %s", error)
+        return 1
+
+
+def _ejecutar_dataset(opciones: argparse.Namespace) -> int:
+    try:
+        config = Configuracion.cargar(opciones.config)
+        rutas = config.seccion("rutas")
+        catalogo = CatalogoAlimentos(Path(rutas["catalogo"]))
+        # No hacer upsert aquí: el catálogo puede contener cambios del equipo.
+        catalogo.clases_validas()
+        gestor = GestorDataset(config, catalogo)
+        if opciones.comando == "validar-etiquetas":
+            informe = ValidadorEtiquetas(config, catalogo).validar([])
+            for mensaje in informe.errores:
+                print(f"ERROR: {mensaje}")
+            for mensaje in informe.advertencias:
+                print(f"ADVERTENCIA: {mensaje}")
+            print(
+                f"Validación: {len(informe.errores)} errores, {len(informe.advertencias)} advertencias."
+            )
+            return 0 if informe.ok else 1
+        if opciones.comando == "construir-manifiesto":
+            manifiesto = gestor.construir_manifiesto()
+            print(
+                f"Manifiesto guardado en {rutas['manifiesto']}: {len(manifiesto)} fotos."
+            )
+        else:
+            gestor.dividir(opciones.prueba, config.semilla)
+            print(f"División por plato_id guardada en {rutas['manifiesto']}.")
+        return 0
+    except (CobroVisionError, OSError, ValueError, sqlite3.Error, cv2.error) as error:
+        logging.getLogger(__name__).error(
+            "No se pudo ejecutar %s: %s. Si falta el catálogo, ejecute inicializar-catalogo.",
+            opciones.comando,
+            error,
+        )
+        return 1
 
 
 def _ejecutar_app(opciones: argparse.Namespace) -> int:

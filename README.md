@@ -4,14 +4,12 @@ Prototipo de visión artificial clásica para identificar alimentos en una foto
 cenital y calcular un cobro que revisa el cajero. Interfaz de escritorio
 con CustomTkinter.
 
-Esta entrega completa la **Etapa 3: interfaz del cajero y correcciones**, además
-del núcleo de visión de la Etapa 2 y del dominio, catálogo y cobro de la Etapa 1.
-Una foto pasa por
-preprocesamiento, detección del plato, segmentación, características,
-clasificación falsa, consolidación y cobro. Incluye fábrica, tiempos,
-trazabilidad y `demo --debug`. El clasificador por defecto es `ClasificadorFalso`;
-no se entrena ningún modelo. `app` permite revisar y corregir el recibo antes
-de registrar la confirmación en CSV.
+Esta entrega incorpora la **Etapa 5: entrenamiento del SVM**, sobre el dataset
+LabelMe, el núcleo de visión y la interfaz del cajero de las etapas anteriores.
+Una foto pasa por preprocesamiento, detección del plato, segmentación,
+características, clasificación, consolidación y cobro. El clasificador por
+defecto sigue siendo `ClasificadorFalso`; tras entrenar, configurar
+`clasificador.tipo: svm` para usar el modelo en `demo` y `app`.
 
 ## Instalación
 
@@ -42,6 +40,66 @@ pip install -e ".[dev]"
 El extra opcional de etiquetado se instala con `pip install -e ".[etiquetado]"`.
 Tkinter viene con el instalador de Python de python.org en Windows y macOS;
 en Linux puede requerir el paquete del sistema `python3-tk` para la GUI.
+
+## Verificación de la Etapa 5
+
+Las pruebas generan exclusivamente platos y etiquetas artificiales en carpetas
+temporales. Verifican exactitud de al menos 0.95 en platos de prueba para los
+modos `poligonos` y `segmentacion`, determinismo, ausencia de fuga por plato,
+persistencia y compatibilidad de extractores:
+
+```text
+pytest -q
+ruff check src tests
+pytest -q tests/test_instancias.py tests/test_svm.py tests/test_entrenador.py
+```
+
+Cuando el equipo tenga fotos reales etiquetadas y el catálogo actualizado:
+
+```text
+python -m cobro_vision validar-etiquetas
+python -m cobro_vision construir-manifiesto
+python -m cobro_vision dividir --prueba 0.2
+python -m cobro_vision entrenar
+python -m cobro_vision entrenar --modo segmentacion
+python -m cobro_vision entrenar --modo ambos
+```
+
+`--modo` reemplaza el modo para esa ejecución sin modificar el YAML. Se usa solo
+`train`. Se exige un mínimo fijo de **3 platos distintos por clase en train**;
+ante clases insuficientes, el comando termina con código 1 y lista sus nombres
+y cantidades. Muchas fotos o parches del mismo plato cuentan como un plato.
+Con menos de `min_instancias_por_clase` filas se emite una advertencia.
+
+`StandardScaler` se ajusta dentro de cada fold de `GroupKFold`; `GridSearchCV`
+selecciona C y gamma por F1 macro y reajusta con todo train. Entrenamiento y
+operación comparten la construcción de `Preprocesador` y `ConstructorVector`
+en la fábrica. Esta etapa no realiza aumento de datos.
+
+Se escriben `models/svm_<fecha>.joblib`, su `.json` hermano (fecha, clases,
+nombres de características, hash de visión, semilla, modo y métricas de CV),
+y una copia en `models/modelo_actual.joblib`. Las rutas se toman de `rutas`.
+Después de revisar el JSON, cambiar `clasificador.tipo` a `svm` en el YAML:
+
+```text
+python -m cobro_vision demo --imagen RUTA_DE_UNA_FOTO --debug
+python -m cobro_vision app
+```
+
+Un cambio en los nombres u orden de características al cargar produce
+`ModeloIncompatible`. La calibración de confianza y las evaluaciones de la
+sección 10 corresponden a etapas posteriores; el umbral sigue siendo provisional.
+La verificación manual del entrenamiento con datos reales queda pendiente del equipo.
+
+Decisiones de esta etapa marcadas como `TODO(equipo)`:
+
+- Se exigen todas las clases activas del mapa, incluido `fondo`; una clase sin
+  instancias útiles cuenta como cero platos.
+- En `ambos`, si falla la detección se conservan los polígonos y se omite la
+  segmentación automática de esa foto.
+- En dos clases, las decisiones son `[-d, d]` y el margen es `2 * abs(d)`.
+- Si dos entrenamientos terminan en el mismo segundo, se agrega un contador
+  al nombre del modelo para conservar ambos.
 
 ## Verificación de la Etapa 3
 
@@ -221,7 +279,7 @@ de trabajo; ejecutar estos ejemplos desde la raíz del repositorio.
 opcional. `evaluar` admite `clasificador`, `segmentacion` y `sistema`.
 `demo --debug` es opcional; `--imagen` y `dividir --prueba` son obligatorios.
 
-`inicializar-catalogo`, `demo` y `app` terminan con código **0** al completar o **1** si
+`inicializar-catalogo`, los comandos de dataset, `entrenar`, `demo` y `app` terminan con código **0** al completar o **1** si
 hay un error de configuración, entrada, procesamiento, escritura o arranque. Los comandos de etapas
 posteriores imprimen `No implementado aún (etapa N)` y terminan con código **2**.
 Consultar la ayuda termina con código **0**.
@@ -241,8 +299,8 @@ entre comillas porque contiene comas, conforme al formato CSV.
 
 **Los precios de la semilla son ejemplos y deben ser reemplazados por el equipo.**
 El catálogo SQLite se genera con `inicializar-catalogo` o al construir el
-pipeline si aún no existe; los datos reales y los modelos corresponden al
-equipo y a etapas posteriores. Las salidas de `demo --debug` se generan localmente.
+pipeline si aún no existe; las fotos y etiquetas reales corresponden al
+equipo. Los modelos y las salidas de `demo --debug` se generan localmente.
 Git ignora `data/*` salvo `data/catalogo_seed.csv`, además
 de `models/` y `salidas/`; `config.yaml` se versiona.
 

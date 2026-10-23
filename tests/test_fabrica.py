@@ -79,9 +79,10 @@ def test_fabrica_rechaza_nombres_no_registrados(
         FabricaPipeline.crear(Configuracion(datos))
 
 
-def test_svm_informa_etapa_pendiente(ruta_config_temporal: Path) -> None:
-    """La Etapa 2 no intenta entrenar ni descargar o cargar un SVM."""
+def test_svm_informa_modelo_ausente(ruta_config_temporal: Path, tmp_path: Path) -> None:
+    """La operación informa cómo generar un modelo si aún no existe."""
     datos = Configuracion.cargar(ruta_config_temporal)._datos
     datos["clasificador"]["tipo"] = "svm"
-    with pytest.raises(ConfiguracionInvalida, match="etapa 5"):
+    datos["rutas"]["modelo_actual"] = str(tmp_path / "ausente.joblib")
+    with pytest.raises(FileNotFoundError, match="entrenar"):
         FabricaPipeline.crear(Configuracion(datos))
