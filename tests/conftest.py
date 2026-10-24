@@ -54,6 +54,9 @@ def datos_config(ruta_proyecto: Path, ruta_semilla_catalogo: Path) -> dict:
     # Los alias del menú de ejemplo no pertenecen al catálogo sintético.
     # Las pruebas de alias proporcionan explícitamente sus propias variantes.
     datos["etiquetas"] = {"alias": {}}
+    # Las pruebas no dependen de la configuración de uso real (semilla ni modelo):
+    datos["semilla"] = 42
+    datos["clasificador"]["tipo"] = "falso"
     return datos
 
 

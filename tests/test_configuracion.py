@@ -20,7 +20,7 @@ def escribir_config(tmp_path: Path, datos: dict) -> Path:
 def test_cargar_configuracion_y_copias(ruta_proyecto: Path) -> None:
     """El ejemplo se carga y sus secciones no permiten cambios accidentales."""
     config = Configuracion.cargar(ruta_proyecto / "config.yaml")
-    assert config.semilla == 42
+    assert isinstance(config.semilla, int)
     assert config.seccion("imagen")["lado_mayor"] == 640
     assert config.seccion("caracteristicas")["extractores"][0]["espacio"] == "hsv"
     imagen = config.seccion("imagen")

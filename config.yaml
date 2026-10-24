@@ -52,7 +52,7 @@ caracteristicas:
     glcm_distancias: [1]
     glcm_angulos: [0.0]                       # radianes; propiedades promediadas
 clasificador:
-  tipo: falso                               # falso | svm (cambiar a svm tras la etapa 5)
+  tipo: svm                               # falso | svm (cambiar a svm tras la etapa 5)
   kernel: rbf
   C: 10
   gamma: scale
