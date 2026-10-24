@@ -1,4 +1,4 @@
-semilla: 42
+semilla: 44
 rutas:
   imagenes: data/raw
   manifiesto: data/manifest.csv
