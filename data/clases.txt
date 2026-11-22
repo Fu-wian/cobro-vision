@@ -1,0 +1,10 @@
+arroz_amarillo
+arroz_blanco
+carne_guisada
+ensalada
+fondo
+menestra
+pasta
+pescado_frito
+pollo
+tajada

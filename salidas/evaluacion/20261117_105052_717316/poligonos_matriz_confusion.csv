@@ -1,0 +1,11 @@
+real,arroz_amarillo,arroz_blanco,carne_guisada,ensalada,fondo,menestra,pasta,pescado_frito,pollo,tajada
+arroz_amarillo,2,2,0,9,0,0,0,0,5,0
+arroz_blanco,1,28,0,4,8,0,0,0,8,0
+carne_guisada,0,0,13,0,0,0,0,2,10,10
+ensalada,0,4,3,29,2,1,0,0,12,1
+fondo,0,0,0,0,99,0,0,0,0,0
+menestra,0,0,0,0,0,52,0,0,4,7
+pasta,0,1,1,0,0,3,9,0,4,0
+pescado_frito,0,0,0,0,0,0,0,1,2,6
+pollo,0,0,0,1,0,0,0,0,23,2
+tajada,0,0,4,0,0,3,0,7,13,13
