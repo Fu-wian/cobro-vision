@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
-from sklearn.model_selection import GridSearchCV, GroupKFold
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -58,7 +58,17 @@ class EntrenadorModelo:
                 "No hay muestras train; construya el manifiesto y ejecute dividir."
             )
         modo = self._config.seccion("entrenamiento")["modo"]
-        instancias = self.constructor_instancias.generar(entrenamiento, modo)
+        seleccion = self._config.seccion("entrenamiento").get(
+            "seleccion_regiones"
+        )
+        if seleccion is None:
+            instancias = self.constructor_instancias.generar(
+                entrenamiento, modo
+            )
+        else:
+            instancias = self.constructor_instancias.generar(
+                entrenamiento, modo, para_entrenamiento=True
+            )
         metricas = self.validacion_cruzada(instancias)
         fecha = datetime.now().astimezone()
         meta = {
@@ -70,6 +80,7 @@ class EntrenadorModelo:
             "modo": modo,
             "semilla": self._config.semilla,
             "metricas_cv": metricas,
+            "seleccion_regiones": seleccion,
         }
         # La fábrica sigue siendo el único lugar que instancia variantes de Clasificador.
         from cobro_vision.controlador.fabrica import FabricaPipeline
@@ -166,7 +177,7 @@ class EntrenadorModelo:
                 "svm__C": config["busqueda"]["C"],
                 "svm__gamma": config["busqueda"]["gamma"],
             },
-            cv=GroupKFold(n_splits=folds),
+            cv=StratifiedGroupKFold(n_splits=folds, shuffle=True, random_state=self._config.semilla),
             scoring="f1_macro",
             refit=True,
             error_score="raise",

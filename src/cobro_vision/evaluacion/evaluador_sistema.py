@@ -39,7 +39,12 @@ class EvaluadorSistema:
         """Procesa test sin corregir ni confirmar transacciones ni ajustar parámetros."""
         _, gestor, muestras = cargar_prueba(self.config)
         controlador = FabricaPipeline.crear_evaluacion(self.config)
-        fotos, mediciones = [], []
+        constructor_etiquetas = FabricaPipeline.crear_constructor_instancias(
+            self.config
+        )
+        minimo_pureza = self.config.seccion("entrenamiento")["pureza_minima"]        
+        fotos, mediciones, eventos_posprocesamiento = [], [], []
+        regiones_predicciones = []
         try:
             for muestra in muestras:
                 esperado = gestor.contenido_esperado(muestra)
@@ -49,6 +54,113 @@ class EvaluadorSistema:
                 transaccion = controlador.procesar(
                     CamaraArchivo.leer(muestra.ruta_imagen)
                 )
+                mapa_real = None
+
+                if transaccion.imagen_procesada is not None:
+                    mapa_real = constructor_etiquetas.mapa.rasterizar(
+                        muestra.etiquetado,
+                        transaccion.imagen_procesada.shape[:2],
+                        constructor_etiquetas.preprocesador.escala(
+                            transaccion.imagen_original
+                        ),
+                    )
+                for region in transaccion.regiones_crudas:
+                    resultado = region.resultado
+
+                    if resultado is None:
+                        continue
+
+                    clase_real = ""
+                    pureza = None
+                    pureza_etiquetada = None
+                    fraccion_etiquetada = None
+                    pixeles_etiquetados = 0
+                    pixeles_dominantes = 0
+                    evaluable = False
+                    correcta = None
+
+                    if mapa_real is not None:
+                        conteos = np.bincount(mapa_real[region.mascara])
+
+                        if len(conteos):
+                            conteos[0] = 0
+
+                            dominante = int(conteos.argmax())
+                            pixeles_dominantes = int(conteos[dominante])
+                            pixeles_etiquetados = int(conteos[1:].sum())
+
+                            clase_real = (
+                                constructor_etiquetas.mapa.clase_de(dominante)
+                                if pixeles_dominantes > 0
+                                else ""
+                            )
+
+                            pureza = pixeles_dominantes / region.area
+
+                            fraccion_etiquetada = (
+                                pixeles_etiquetados / region.area
+                            )
+
+                            pureza_etiquetada = (
+                                pixeles_dominantes / pixeles_etiquetados
+                                if pixeles_etiquetados
+                                else None
+                            )
+
+                            evaluable = (
+                                pixeles_dominantes > 0
+                                and pureza >= minimo_pureza
+                            )
+
+                            correcta = (
+                                resultado.id_clase == clase_real
+                                if evaluable
+                                else None
+                            )
+
+                    regiones_predicciones.append(
+                        {
+                            "id_foto": muestra.id_foto,
+                            "plato_id": muestra.plato_id,
+                            "id_region": region.id,
+                            "clase_predicha": resultado.id_clase,
+                            "score_svm": resultado.score,
+                            "requiere_revision_clasificador": (
+                                resultado.requiere_revision
+                            ),
+                            "clase_alternativa": resultado.alternativa or "",
+                            "area": region.area,
+                            "estado_inicial": region.estado,
+                            "bbox": json.dumps(region.bbox),
+                            "clase_real": clase_real,
+                            "pixeles_etiquetados": pixeles_etiquetados,
+                            "pixeles_dominantes": pixeles_dominantes,
+                            "pureza": pureza,
+                            "pureza_etiquetada": pureza_etiquetada,
+                            "fraccion_etiquetada": fraccion_etiquetada,
+                            "evaluable": evaluable,
+                            "correcta": correcta,
+                        }
+                    )
+                for indice, traza in enumerate(transaccion.trazas):
+                    if traza.etapa != "posprocesamiento":
+                        continue
+
+                    eventos_posprocesamiento.append(
+                        {
+                            "id_foto": muestra.id_foto,
+                            "plato_id": muestra.plato_id,
+                            "indice_evento": indice,
+                            "etapa": traza.etapa,
+                            "descripcion": traza.descripcion,
+                            "duracion_ms": traza.duracion_ms,
+                            "datos": json.dumps(
+                                traza.datos,
+                                ensure_ascii=False,
+                                default=str,
+                            ),
+                        }
+                    )
                 recibo = transaccion.recibo
                 detectado = (
                     {item.alimento.id_clase for item in recibo.items}
@@ -138,6 +250,8 @@ class EvaluadorSistema:
                 "tiempos": pd.DataFrame(
                     [{"etapa": etapa, **valores} for etapa, valores in tiempos.items()]
                 ),
+                "eventos_posprocesamiento": pd.DataFrame(eventos_posprocesamiento),
+                "regiones_predicciones": pd.DataFrame(regiones_predicciones),
             },
             self.registro,
         )

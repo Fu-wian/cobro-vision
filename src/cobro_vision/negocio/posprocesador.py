@@ -53,6 +53,40 @@ class Posprocesador:
             mascara = mapa_origen == region.id
             etiquetas[mascara] = indices[region.resultado.id_clase]
             margenes[mascara] = region.resultado.score
+        modo_filtro = self._config.get(
+            "filtro_evidencia", "desactivado"
+        )
+
+        areas_originales = Counter()
+        evidencia_original = Counter()
+        area_segmentada = 0
+
+        if modo_filtro != "desactivado":
+            for clase, indice in indices.items():
+                mascara_original = etiquetas == indice
+
+                area_original = int(
+                    mascara_original.sum()
+                )
+
+                areas_originales[clase] = area_original
+
+                evidencia_original[clase] = float(
+                    margenes[mascara_original].sum()
+                )
+
+                area_segmentada += area_original
+
+        modo_confianza = self._config.get(
+            "confianza_absorcion", "original"
+        )
+
+        etiquetas_originales = (
+            etiquetas.copy()
+            if modo_confianza != "original"
+            else None
+        )
+
         area_plato = int(mascara_plato.sum())
         minimo = self._config["componente_minimo_frac"] * area_plato
         fusiones: dict[int, list[Region]] = {}
@@ -104,37 +138,143 @@ class Posprocesador:
                 }
             )
         componentes = [r for r in componentes if r.resultado.id_clase != ID_FONDO]
+        if etiquetas_originales is not None:
+
+            for region in componentes:
+
+                clase = region.resultado.id_clase
+
+                propios = (
+                    region.mascara
+                    & (etiquetas_originales == indices[clase])
+                )
+
+                cantidad_propia = int(propios.sum())
+
+                score_anterior = region.resultado.score
+
+                suma_propia = float(
+                    margenes[propios].sum()
+                )
+
+                if modo_confianza == "evidencia_propia":
+
+                    score = (
+                        suma_propia / cantidad_propia
+                        if cantidad_propia else 0.0
+                    )
+
+                elif modo_confianza == "penalizada":
+
+                    score = (
+                        suma_propia / region.area
+                        if region.area else 0.0
+                    )
+
+                else:
+                    raise ValueError(
+                        "Modo de confianza desconocido."
+                    )
+
+                region.resultado.score = score
+
+                if cantidad_propia != region.area:
+
+                    self.eventos.append({
+                        "accion": "ajustar_confianza_absorcion",
+                        "clase": clase,
+                        "modo": modo_confianza,
+                        "area": region.area,
+                        "pixeles_propios": cantidad_propia,
+                        "pixeles_absorbidos": (
+                            region.area - cantidad_propia
+                        ),
+                        "score_anterior": score_anterior,
+                        "score_nuevo": score
+                    })
+
         areas: Counter[str] = Counter()
         for region in componentes:
             areas[region.resultado.id_clase] += region.area
-        descartadas = {
+        clases_excluidas = set()
+
+        if modo_filtro != "desactivado" and area_segmentada:
+
+            for clase, area_final in areas.items():
+
+                area_original = areas_originales[clase]
+
+                if not area_original:
+                    continue
+
+                ao = area_original / area_segmentada
+                af = area_final / area_segmentada
+
+                score = (
+                    evidencia_original[clase]
+                    / area_original
+                )
+
+                d1 = af < 0.04 and score < 0.65
+
+                d7 = (
+                    ao < 0.05
+                    and af < 0.06
+                    and score < 0.70
+                )
+
+                excluir = (
+                    d7
+                    if modo_filtro == "d7"
+                    else d1 or d7
+                )
+
+                if excluir:
+                    clases_excluidas.add(clase)
+
+                    self.eventos.append({
+                        "accion": "excluir_evidencia",
+                        "clase": clase,
+                        "modo": modo_filtro,
+                        "area_original": area_original,
+                        "area_final": area_final,
+                        "area_segmentada": area_segmentada,
+                        "area_original_frac": ao,
+                        "area_final_frac": af,
+                        "score_original": score,
+                        "regla_d1": d1,
+                        "regla_d7": d7
+                    })
+
+            for clase in clases_excluidas:
+                del areas[clase]
+
+        revisar_area = {
             clase
             for clase, area in areas.items()
             if area < self._config["clase_minima_frac"] * area_plato
         }
-        for clase in sorted(descartadas):
+        for clase in sorted(revisar_area):
             self.eventos.append(
                 {
-                    "accion": "eliminar_clase",
+                    "accion": "revisar_clase_area",
                     "clase": clase,
                     "area": areas[clase],
                 }
             )
-        componentes = [
-            r for r in componentes if r.resultado.id_clase not in descartadas
-        ]
         proteinas = sorted(
             (
                 clase
                 for clase in areas
-                if clase not in descartadas and alimentos[clase].categoria == "proteina"
+                if alimentos[clase].categoria == "proteina"
             ),
             key=lambda clase: (-areas[clase], clase),
         )
         limite = self._config["max_proteinas"]
         # TODO(equipo): proteínas con igual área se priorizan por id_clase.
         revisar = set(proteinas[limite:]) if limite is not None else set()
-        for clase in sorted(revisar):
+        revisar.update(revisar_area)
+        for clase in sorted(revisar - revisar_area):
             self.eventos.append({"accion": "revisar_proteina", "clase": clase})
         for identificador, region in enumerate(componentes, 1):
             region.id = identificador
@@ -146,6 +286,11 @@ class Posprocesador:
                 "revisar" if region.resultado.requiere_revision else "aceptada"
             )
             self.origenes[region.id] = self._ids_origen(region, mapa_origen)
+        for region in componentes:
+            if region.resultado.id_clase in clases_excluidas:
+                region.estado = "eliminada"
+                region.resultado.requiere_revision = True
+
         return componentes
 
     @staticmethod

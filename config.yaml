@@ -3,7 +3,6 @@ rutas:
   imagenes: data/raw
   manifiesto: data/manifest.csv
   catalogo: data/catalogo.db
-  # TODO(equipo): Confirmar el menú, los id_clase y los precios de ejemplo de la semilla.
   semilla_catalogo: data/catalogo_seed.csv
   modelos: models
   modelo_actual: models/modelo_actual.joblib
@@ -21,67 +20,110 @@ etiquetas:
     puerco_guisado: carne_guisada
     chowmein: pasta
     espagueti: pasta
-    arroz_guandu: arroz_blanco                                 # etiqueta_origen: id_clase_destino
+    arroz_guandu: arroz_blanco
 imagen:
   lado_mayor: 640
-  filtro: {tipo: mediana, tamano: 3}        # mediana | gaussiano | ninguno
-  correccion_color: {metodo: gray_world}    # gray_world | tarjeta_gris | ninguna
+  filtro:
+    tipo: mediana
+    tamano: 3
+  correccion_color:
+    metodo: gray_world
 plato:
-  metodo: hough                             # hough | umbral | imagen_completa
-  radio_min_frac: 0.20                      # relativos al lado menor de la imagen procesada
-  radio_max_frac: 0.60
-  reducir_radio: 0.97
-  area_minima_frac: 0.10
-  umbral: {s_max: 60, v_min: 140}           # usado por 'umbral' y como respaldo de 'hough'
+  metodo: hibrido
+  radio_min_frac: 0.2
+  radio_max_frac: 0.75
+  reducir_radio: 1.0
+  area_minima_frac: 0.1
+  umbral:
+    s_max: 60
+    v_min: 140
+  area_min_hough_frac: 0.3
+  umbral_respaldo:
+    s_max: 80
+    v_min: 120
 segmentacion:
-  clase: SegmentadorSuperpixeles            # SegmentadorSuperpixeles | SegmentadorVentanas
-  n_segmentos: 100
+  clase: SegmentadorSuperpixeles
+  n_segmentos: 300
   compacidad: 10
   sigma: 1.0
-  area_minima_px: 150
-  ventanas: {tamano: 40, paso: 40}
+  area_minima_px: 100
+  ventanas:
+    tamano: 40
+    paso: 40
 caracteristicas:
-  - clase: ExtractorHistogramaColor
-    espacio: hsv                            # hsv | lab
-    bins: [16, 8, 8]
-    momentos: true
-  - clase: ExtractorTextura
-    lbp: {radio: 1, puntos: 8}
-    gradiente: true
-    glcm: false
-    glcm_distancias: [1]
-    glcm_angulos: [0.0]                       # radianes; propiedades promediadas
+- clase: ExtractorHistogramaColor
+  espacio: hsv
+  bins:
+  - 16
+  - 8
+  - 8
+  momentos: true
+- clase: ExtractorHistogramaColor
+  espacio: lab
+  bins:
+  - 16
+  - 8
+  - 8
+  momentos: true
+- clase: ExtractorTextura
+  lbp:
+    radio: 1
+    puntos: 8
+  gradiente: true
+  glcm: true
+  glcm_distancias:
+  - 1
+  glcm_angulos:
+  - 0.0
+  lbp_multiescala:
+  - radio: 1
+    puntos: 8
+  - radio: 2
+    puntos: 16
+  - radio: 3
+    puntos: 24
 clasificador:
-  tipo: svm                               # falso | svm (cambiar a svm tras la etapa 5)
+  tipo: svm
   kernel: rbf
   C: 10
   gamma: scale
-  class_weight: balanced
-  # TODO(equipo): Calibrar este umbral provisional con 'evaluar clasificador'.
+  class_weight: null
   umbral_confianza: 0.5
-  busqueda: {C: [1, 10, 100], gamma: [scale, 0.01, 0.1], folds: 5}
+  busqueda:
+    C:
+    - 10
+    gamma:
+    - scale
+    folds: 3
 entrenamiento:
-  modo: poligonos                           # poligonos | segmentacion | ambos
+  modo: ambos
   parches_por_poligono: 8
   radio_parche: 22
   pureza_minima: 0.8
   min_instancias_por_clase: 20
+  seleccion_regiones:
+    pureza_etiquetada_minima: 0.95
+    cobertura_minima: 0.5
 posproceso:
-  componente_minimo_frac: 0.01
+  componente_minimo_frac: 0.025
   clase_minima_frac: 0.03
-  max_proteinas: 1                          # null = sin límite
+  max_proteinas: 1
+  confianza_absorcion: evidencia_propia
+  filtro_evidencia: d1_d7
 cobro:
-  # TODO(equipo): Confirmar la política real de cobro de la cafetería.
-  politica: CobroPorComponente              # CobroPorComponente | CobroPorPlato
+  politica: CobroPorComponente
   por_plato:
-    precios_por_proteina_centavos: {}       # {pollo: 450, pescado_frito: 475}; vacío = suma
+    precios_por_proteina_centavos: {}
 camara:
-  clase: CamaraArchivo                      # CamaraArchivo | CamaraUSB
+  clase: CamaraUSB
   carpeta: data/raw
   indice: 0
 ui:
-  exigir_revision: true                     # Confirmar se bloquea con ítems en revisión
-  moneda: "B/."
-  tema: system                              # system | light | dark
-  tamano_ventana: [1200, 720]
-  vista_previa_ms: 33                       # intervalo de vista previa (solo CamaraUSB)
+  exigir_revision: true
+  moneda: B/.
+  tema: system
+  tamano_ventana:
+  - 1200
+  - 720
+  vista_previa_ms: 33
+  captura_automatica: true

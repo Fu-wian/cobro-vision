@@ -126,6 +126,8 @@ def controlador_cajero(
     """Aísla el catálogo y las transacciones CSV del cajero en temporales."""
     datos = yaml.safe_load(ruta_config_temporal.read_text(encoding="utf-8"))
     datos["rutas"]["salidas"] = str(tmp_path / "salidas")
+    datos["camara"]["clase"] = "CamaraArchivo"
+    datos["ui"]["captura_automatica"] = False
     ruta_config_temporal.write_text(yaml.safe_dump(datos), encoding="utf-8")
     return FabricaPipeline.crear(Configuracion.cargar(ruta_config_temporal))
 

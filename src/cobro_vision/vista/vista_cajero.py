@@ -1,6 +1,10 @@
 """Ventana CustomTkinter: widgets en Tk y trabajo del controlador en un hilo."""
 
 import logging
+from time import monotonic
+
+from cobro_vision.adquisicion.captura_automatica import CapturaAutomatica
+from cobro_vision.adquisicion.camara import CamaraUSB
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -48,6 +52,21 @@ class VistaCajero(ctk.CTk):
         self, controlador: ControladorTransaccion, config: Configuracion
     ) -> None:
         self._ui = config.seccion("ui")
+        self._automatico = (
+            isinstance(controlador.camara, CamaraUSB)
+            and self._ui.get("captura_automatica", True)
+        )
+        self._pausada = False
+        self._consulta_camara = None
+        self._inicio_camara = monotonic()
+        self._captura_auto = CapturaAutomatica(
+            estabilidad_s=0.8,
+            umbral_movimiento=0.05,
+            umbral_presencia=0.08,
+            retiro_s=1.0,
+        )
+        self._ultimo_frame = None
+        self._origen_recibo = None
         ctk.set_appearance_mode(self._ui["tema"])
         super().__init__()
         self.controlador = controlador
@@ -80,16 +99,33 @@ class VistaCajero(ctk.CTk):
         izquierda.grid(row=0, column=0, padx=12, pady=12, sticky="nsew")
         izquierda.grid_columnconfigure(0, weight=1)
         izquierda.grid_rowconfigure(1, weight=1)
-        etiqueta_captura = (
-            "Abrir foto..."
-            if config.seccion("camara")["clase"] == "CamaraArchivo"
-            else "Capturar"
-        )
-        self._desde_archivo = config.seccion("camara")["clase"] == "CamaraArchivo"
+        self._desde_archivo = True
+
+        barra = ctk.CTkFrame(izquierda)
+        barra.grid(row=0, column=0, pady=10)
+
         self._boton_escanear = ctk.CTkButton(
-            izquierda, text=etiqueta_captura, command=self.al_escanear
+            barra,
+            text="Abrir foto...",
+            command=self.al_escanear
         )
-        self._boton_escanear.grid(row=0, column=0, pady=10)
+        self._boton_escanear.pack(side="left", padx=4)
+
+        if self._automatico:
+            self._boton_pausa = ctk.CTkButton(
+                barra,
+                text="Pausar camara",
+                command=self._alternar_camara
+            )
+            self._boton_pausa.pack(side="left", padx=4)
+
+            self._boton_calibrar = ctk.CTkButton(
+                barra,
+                text="Calibrar fondo",
+                command=self._calibrar_fondo
+            )
+            self._boton_calibrar.pack(side="left", padx=4)
+
         self._panel_imagen = ctk.CTkFrame(izquierda)
         self._panel_imagen.grid(row=1, column=0, padx=10, sticky="nsew")
         self._panel_imagen.grid_columnconfigure(0, weight=1)
@@ -147,6 +183,14 @@ class VistaCajero(ctk.CTk):
         self._actualizar_controles()
         self.protocol("WM_DELETE_WINDOW", self.destroy)
         self._consulta = self.after(50, self._revisar_cola)
+
+        if self._automatico:
+            self.mostrar_alerta(
+                "Mantenga vacia la superficie durante la calibracion."
+            )
+            self._consulta_camara = self.after(
+                100, self._actualizar_camara
+            )
 
     def mostrar_previsualizacion(self, imagen_bgr: np.ndarray) -> None:
         """Convierte BGR a RGB y conserva la referencia CTkImage en el hilo de Tk."""
@@ -231,6 +275,11 @@ class VistaCajero(ctk.CTk):
             else:
                 tarea = self.controlador.capturar_y_procesar
             self._nueva_transaccion()
+
+            if getattr(self, "_automatico", False):
+                self._captura_auto.bloquear()
+                self._origen_recibo = "archivo"
+
             self._iniciar_tarea(tarea)
         except Exception as error:  # noqa: BLE001 - frontera de eventos de Tk
             self.mostrar_alerta(str(error))
@@ -279,6 +328,11 @@ class VistaCajero(ctk.CTk):
             self.withdraw()
             return
         self._destruida = True
+
+        if self._consulta_camara is not None:
+            self.after_cancel(self._consulta_camara)
+            self._consulta_camara = None
+
         if self._consulta is not None:
             self.after_cancel(self._consulta)
         try:
@@ -369,6 +423,26 @@ class VistaCajero(ctk.CTk):
         self._total.configure(text=texto_total(None, self._ui["moneda"]))
         self._tiempos.configure(text="")
         self.mostrar_alerta("")
+
+        if self._automatico:
+            self._origen_recibo = None
+            self._pausada = False
+
+            self._boton_pausa.configure(
+                text="Pausar camara"
+            )
+
+            if self._captura_auto.fondo is not None:
+                self._captura_auto.reiniciar()
+                self.mostrar_alerta(
+                    "Nueva transaccion. Camara lista para capturar."
+                )
+            else:
+                self._inicio_camara = monotonic()
+                self.mostrar_alerta(
+                    "Mantenga vacia la superficie."
+                )
+
         self._actualizar_controles()
 
     def _redibujar_foto(self) -> None:
@@ -408,3 +482,127 @@ class VistaCajero(ctk.CTk):
             cuadro.configure(state="disabled")
         except Exception as error:  # noqa: BLE001 - frontera del diálogo de explicación
             self.mostrar_alerta(str(error))
+
+
+    def _alternar_camara(self):
+        """Pausa o reanuda la captura automatica."""
+        self._pausada = not self._pausada
+
+        self._boton_pausa.configure(
+            text="Reanudar camara"
+            if self._pausada else "Pausar camara"
+        )
+
+        if self._pausada:
+            self.mostrar_alerta("Camara pausada.")
+        elif self.transaccion is None:
+            self._captura_auto.reiniciar()
+            self.mostrar_alerta("Camara activa. Coloque un plato.")
+
+    def _calibrar_fondo(self):
+        """Registra la superficie vacia como referencia."""
+        if self._ocupada or self.transaccion is not None:
+            return
+
+        if self._ultimo_frame is None:
+            self.mostrar_alerta("No hay imagen de la camara.")
+            return
+
+        self._captura_auto.calibrar(self._ultimo_frame)
+        self.mostrar_alerta("Fondo calibrado. Coloque un plato.")
+
+    def _actualizar_camara(self):
+        """Actualiza la vista y dispara una captura cuando hay estabilidad."""
+        self._consulta_camara = None
+
+        if self._cerrando or self._destruida:
+            return
+
+        intervalo = max(
+            33, int(self._ui.get("vista_previa_ms", 33))
+        )
+
+        try:
+            if self._pausada:
+                return
+
+            frame = self.controlador.camara.leer_frame()
+            self._ultimo_frame = frame
+
+            if self._ocupada:
+                return
+
+            if self.transaccion is not None:
+
+                if self.transaccion.estado == "confirmada":
+
+                    if self._captura_auto.estado == "bloqueado":
+                        self._captura_auto.esperar_retiro()
+
+                    self._captura_auto.actualizar(frame)
+
+                    if self._captura_auto.estado == "esperando":
+                        self._nueva_transaccion()
+                        self._captura_auto.calibrar(frame)
+
+                elif self.transaccion.estado == "error":
+
+                    if self._captura_auto.estado == "bloqueado":
+                        self._captura_auto.esperar_retiro()
+
+                    self._captura_auto.actualizar(frame)
+
+                    if self._captura_auto.estado == "esperando":
+                        self._nueva_transaccion()
+                        self._captura_auto.calibrar(frame)
+
+                return
+
+            self.mostrar_previsualizacion(frame)
+
+            if self._captura_auto.fondo is None:
+
+                if monotonic() - self._inicio_camara >= 3.0:
+                    self._captura_auto.calibrar(frame)
+                    self.mostrar_alerta(
+                        "Camara activa. Coloque un plato."
+                    )
+
+                return
+
+            capturar = self._captura_auto.actualizar(frame)
+
+            if capturar:
+                self._origen_recibo = "camara"
+
+                self._iniciar_tarea(
+                    partial(
+                        self.controlador.procesar,
+                        frame.copy()
+                    )
+                )
+
+            else:
+                mensajes = {
+                    "esperando": "Camara activa. Coloque un plato.",
+                    "estabilizando": "Mantenga el plato inmovil...",
+                    "esperando_retiro": "Retire el plato para continuar.",
+                    "bloqueado": "Captura detenida. Inicie una nueva transaccion."
+                }
+
+                self.mostrar_alerta(
+                    mensajes.get(self._captura_auto.estado, "")
+                )
+
+        except Exception as error:
+            self.mostrar_alerta(
+                f"Error de camara: {error}"
+            )
+            intervalo = 1000
+
+        finally:
+            if not self._cerrando and not self._destruida:
+                self._consulta_camara = self.after(
+                    intervalo,
+                    self._actualizar_camara
+                )

@@ -27,6 +27,8 @@ class DetectorPlato:
                 mascara = self._umbral(imagen)
         elif metodo == "umbral":
             mascara = self._umbral(imagen)
+        elif metodo in ("hibrido", "adaptativo"):
+            mascara = self._hibrido(imagen)
         else:
             raise ValueError(f"Método de detección desconocido: {metodo}")
         if (
@@ -35,6 +37,170 @@ class DetectorPlato:
         ):
             raise PlatoNoDetectado("No se detectó un plato con área suficiente.")
         return mascara
+
+    def _hibrido(self, imagen: np.ndarray) -> np.ndarray:
+        """Reproduce E06-K y permite el recorte experimental E06-M."""
+
+        config_principal = deepcopy(self._config)
+        config_principal["metodo"] = "hough"
+
+        config_principal["umbral"] = deepcopy(
+            self._config["umbral"]
+        )
+
+        principal = DetectorPlato(config_principal)
+
+        try:
+            mascara = principal.detectar(imagen)
+        except PlatoNoDetectado:
+            mascara = None
+
+        if (
+            mascara is not None
+            and mascara.mean()
+            >= self._config["area_min_hough_frac"]
+        ):
+            return mascara
+
+        config_respaldo = deepcopy(self._config)
+        config_respaldo["metodo"] = "umbral"
+
+        config_respaldo["umbral"] = deepcopy(
+            self._config["umbral_respaldo"]
+        )
+
+        respaldo = DetectorPlato(
+            config_respaldo
+        ).detectar(imagen)
+
+        if self._config["metodo"] == "adaptativo":
+            respaldo = self._separar_tapa(
+                imagen, respaldo
+            )
+
+        return respaldo
+
+    def _separar_tapa(
+        self,
+        imagen: np.ndarray,
+        mascara: np.ndarray,
+    ) -> np.ndarray:
+        """Recorte conservador de una posible tapa sin alimentos."""
+
+        parametros = self._config["adaptativo"]
+
+        filas, columnas = np.nonzero(mascara)
+
+        if len(filas) < 10:
+            return mascara
+
+        puntos = np.column_stack(
+            (columnas, filas)
+        ).astype(np.float64)
+
+        centro = puntos.mean(axis=0)
+        centrados = puntos - centro
+
+        covarianza = np.cov(
+            centrados, rowvar=False
+        )
+
+        valores, vectores = np.linalg.eigh(
+            covarianza
+        )
+
+        if valores[0] <= 0:
+            return mascara
+
+        elongacion = float(
+            np.sqrt(valores[1] / valores[0])
+        )
+
+        if elongacion < parametros["elongacion_minima"]:
+            return mascara
+
+        eje = vectores[:, 1]
+        proyeccion = centrados @ eje
+
+        mitad_a = proyeccion <= 0
+        mitad_b = ~mitad_a
+
+        if not mitad_a.any() or not mitad_b.any():
+            return mascara
+
+        hsv = cv2.cvtColor(
+            imagen, cv2.COLOR_BGR2HSV
+        )
+
+        saturacion = hsv[
+            filas, columnas, 1
+        ]
+
+        colores = (
+            saturacion >= parametros["saturacion_minima"]
+        )
+
+        if not colores.any():
+            return mascara
+
+        densidad_a = float(
+            colores[mitad_a].mean()
+        )
+
+        densidad_b = float(
+            colores[mitad_b].mean()
+        )
+
+        if densidad_a >= densidad_b:
+            conservar = mitad_a
+            alta = densidad_a
+            baja = densidad_b
+        else:
+            conservar = mitad_b
+            alta = densidad_b
+            baja = densidad_a
+
+        if alta < parametros["densidad_minima"]:
+            return mascara
+
+        if baja > alta * parametros["ratio_maximo_tapa"]:
+            return mascara
+
+        amplitud = float(np.ptp(proyeccion))
+
+        margen = (
+            amplitud * parametros["margen_corte_frac"]
+        )
+
+        if densidad_a >= densidad_b:
+            conservar = proyeccion <= margen
+        else:
+            conservar = proyeccion >= -margen
+
+        retencion_color = (
+            np.count_nonzero(colores & conservar)
+            / np.count_nonzero(colores)
+        )
+
+        if (
+            retencion_color
+            < parametros["retencion_color_minima"]
+        ):
+            return mascara
+
+        salida = np.zeros_like(
+            mascara, dtype=bool
+        )
+
+        salida[
+            filas[conservar],
+            columnas[conservar]
+        ] = True
+
+        if salida.mean() < self._config["area_minima_frac"]:
+            return mascara
+
+        return salida
 
     def _hough(self, imagen: np.ndarray) -> np.ndarray | None:
         gris = cv2.medianBlur(cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY), 5)

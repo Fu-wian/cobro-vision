@@ -40,6 +40,25 @@
     },
     {
       "id": 3,
+      "mascara_sha256": "2d8308155b7e120d092c4b43c3b7d00bbc622260f332f8d4d872889a8c502531",
+      "bbox": [
+        175,
+        60,
+        205,
+        90
+      ],
+      "area": 900,
+      "vector": null,
+      "resultado": {
+        "id_clase": "frijoles",
+        "score": "0x1.17e4b17e4b17ep-1",
+        "requiere_revision": true,
+        "alternativa": null
+      },
+      "estado": "revisar"
+    },
+    {
+      "id": 4,
       "mascara_sha256": "bb9d6a6776070fb374a79c3edde44ec6012c05b61358dee5975f776f4770f114",
       "bbox": [
         170,
@@ -58,7 +77,7 @@
       "estado": "revisar"
     },
     {
-      "id": 4,
+      "id": 5,
       "mascara_sha256": "662d01ab74442338fe26d4dd7b81037b457326b6add7803aec97f4ab87bdd49d",
       "bbox": [
         160,
@@ -122,7 +141,7 @@
       "frontera": 16
     },
     {
-      "accion": "eliminar_clase",
+      "accion": "revisar_clase_area",
       "clase": "frijoles",
       "area": 900
     },
@@ -173,12 +192,18 @@
       129
     ],
     "3": [
+      23,
+      25,
+      37,
+      39
+    ],
+    "4": [
       51,
       53,
       65,
       67
     ],
-    "4": [
+    "5": [
       82,
       84,
       85,

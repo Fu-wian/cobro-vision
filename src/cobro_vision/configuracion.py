@@ -120,7 +120,10 @@ def _validar(datos: dict) -> None:
     opciones = {
         "imagen.filtro.tipo": ("mediana", "gaussiano", "ninguno"),
         "imagen.correccion_color.metodo": ("gray_world", "tarjeta_gris", "ninguna"),
-        "plato.metodo": ("hough", "umbral", "imagen_completa"),
+        "plato.metodo": (
+            "hough", "umbral", "imagen_completa",
+            "hibrido", "adaptativo"
+        ),
         "segmentacion.clase": ("SegmentadorSuperpixeles", "SegmentadorVentanas"),
         "clasificador.tipo": ("falso", "svm"),
         "clasificador.kernel": ("linear", "poly", "rbf", "sigmoid"),
@@ -172,6 +175,99 @@ def _validar(datos: dict) -> None:
         "entrenamiento.pureza_minima",
     ):
         _numero(_campo(datos, campo), campo, maximo=1, positivo=True)
+    metodo_plato = _campo(datos, "plato.metodo")
+
+    if metodo_plato in ("hibrido", "adaptativo"):
+        campo = "plato.area_min_hough_frac"
+
+        _numero(
+            _campo(datos, campo),
+            campo,
+            maximo=1,
+            positivo=True,
+        )
+
+        _exigir(
+            _campo(datos, campo)
+            >= _campo(datos, "plato.area_minima_frac"),
+            campo,
+            "debe ser mayor o igual al area minima.",
+        )
+
+        for nombre in ("s_max", "v_min"):
+            campo = f"plato.umbral_respaldo.{nombre}"
+
+            _numero(
+                _campo(datos, campo),
+                campo,
+                minimo=0,
+                maximo=255,
+                entero=True,
+            )
+
+    if metodo_plato == "adaptativo":
+        campo = "plato.adaptativo.elongacion_minima"
+
+        _numero(
+            _campo(datos, campo),
+            campo,
+            minimo=1,
+        )
+
+        campo = "plato.adaptativo.saturacion_minima"
+
+        _numero(
+            _campo(datos, campo),
+            campo,
+            minimo=1,
+            maximo=255,
+            entero=True,
+        )
+
+        for nombre in (
+            "densidad_minima",
+            "ratio_maximo_tapa",
+            "retencion_color_minima",
+        ):
+            campo = f"plato.adaptativo.{nombre}"
+
+            _numero(
+                _campo(datos, campo),
+                campo,
+                maximo=1,
+                positivo=True,
+            )
+
+        campo = "plato.adaptativo.margen_corte_frac"
+
+        _numero(
+            _campo(datos, campo),
+            campo,
+            maximo=0.25,
+        )
+
+    entrenamiento = _campo(datos, "entrenamiento")
+    if "seleccion_regiones" in entrenamiento:
+        seleccion = entrenamiento["seleccion_regiones"]
+        prefijo = "entrenamiento.seleccion_regiones"
+
+        _exigir(
+            isinstance(seleccion, dict),
+            prefijo,
+            "se esperaba un diccionario.",
+        )
+
+        for nombre in (
+            "pureza_etiquetada_minima",
+            "cobertura_minima",
+        ):
+            _numero(
+                _campo(seleccion, nombre),
+                f"{prefijo}.{nombre}",
+                maximo=1,
+                positivo=True,
+            )
+
     for campo in ("posproceso.componente_minimo_frac", "posproceso.clase_minima_frac"):
         _numero(_campo(datos, campo), campo, maximo=1)
     _exigir(
@@ -179,6 +275,36 @@ def _validar(datos: dict) -> None:
         "plato.radio_max_frac",
         "debe superar radio_min_frac.",
     )
+    modo_confianza = datos["posproceso"].get(
+        "confianza_absorcion", "original"
+    )
+
+    _exigir(
+        isinstance(modo_confianza, str)
+        and modo_confianza in (
+            "original",
+            "evidencia_propia",
+            "penalizada",
+        ),
+        "posproceso.confianza_absorcion",
+        "modo de confianza no valido.",
+    )
+
+    filtro_evidencia = datos["posproceso"].get(
+        "filtro_evidencia", "desactivado"
+    )
+
+    _exigir(
+        isinstance(filtro_evidencia, str)
+        and filtro_evidencia in (
+            "desactivado",
+            "d7",
+            "d1_d7",
+        ),
+        "posproceso.filtro_evidencia",
+        "modo de filtro no valido.",
+    )
+
     limite = _campo(datos, "posproceso.max_proteinas")
     if limite is not None:
         _numero(limite, "posproceso.max_proteinas", entero=True)
@@ -266,6 +392,44 @@ def _validar(datos: dict) -> None:
                     entero=True,
                     positivo=True,
                 )
+            if "lbp_multiescala" in extractor:
+                campo = f"{prefijo}.lbp_multiescala"
+                escalas = extractor["lbp_multiescala"]
+
+                _lista(escalas, campo)
+
+                combinaciones = set()
+
+                for indice_escala, escala in enumerate(escalas):
+                    ruta_escala = f"{campo}[{indice_escala}]"
+
+                    _exigir(
+                        isinstance(escala, dict),
+                        ruta_escala,
+                        "se esperaba un diccionario.",
+                    )
+
+                    for nombre in ("radio", "puntos"):
+                        _numero(
+                            _campo(escala, nombre),
+                            f"{ruta_escala}.{nombre}",
+                            entero=True,
+                            positivo=True,
+                        )
+
+                    combinacion = (
+                        escala["radio"],
+                        escala["puntos"],
+                    )
+
+                    _exigir(
+                        combinacion not in combinaciones,
+                        ruta_escala,
+                        "escala LBP duplicada.",
+                    )
+
+                    combinaciones.add(combinacion)
+
             for nombre in ("glcm_distancias", "glcm_angulos"):
                 if nombre not in extractor:
                     continue

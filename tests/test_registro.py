@@ -34,7 +34,14 @@ def test_registro_agrega_filas_y_conserva_metricas(
             ]
         ):
             registro.registrar("prueba", config, metricas)
-            tabla = pd.read_csv(ruta, keep_default_na=False)
+            tabla = pd.read_csv(
+                ruta,
+                keep_default_na=False,
+                dtype={
+                    "hash_configuracion": str,
+                    "hash_git": str,
+                },
+            )
             assert len(tabla) == indice + 1
             assert json.loads(tabla.iloc[-1]["metricas"]) == metricas
     assert set(tabla["hash_configuracion"]) == {config.hash()}

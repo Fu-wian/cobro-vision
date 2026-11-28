@@ -76,6 +76,17 @@ class CamaraUSB(Camara):
         self._captura.set(cv2.CAP_PROP_FRAME_WIDTH, ancho)
         self._captura.set(cv2.CAP_PROP_FRAME_HEIGHT, alto)
 
+    def leer_frame(self) -> np.ndarray:
+        """Obtiene un fotograma sin descartar cuadros adicionales."""
+        correcto, imagen = self._captura.read()
+
+        if not correcto or imagen is None:
+            raise RuntimeError(
+                "No se pudo obtener un cuadro de la camara USB."
+            )
+
+        return imagen
+
     def capturar(self) -> np.ndarray:
         """Descarta los cuadros de calentamiento y obtiene uno nuevo."""
         for _ in range(self._frames_calentamiento + 1):

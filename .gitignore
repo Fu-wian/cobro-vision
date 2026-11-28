@@ -15,3 +15,15 @@ dist/
 .coverage
 .coverage.*
 htmlcov/
+
+# Respaldos y experimentos locales
+respaldos/
+respaldo_*/
+experimentos/E*/
+experimentos/lab*/
+experimentos/integracion_s1_s4/
+*.bak*
+*.antes_*
+config_antes_camara.yaml
+diagnostico_P009_a_regiones.jpg
+prueba_camara.py

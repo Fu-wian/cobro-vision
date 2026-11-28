@@ -8,7 +8,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import yaml
-from sklearn.model_selection import GroupKFold
+from sklearn.model_selection import StratifiedGroupKFold
 
 from cobro_vision.adquisicion.camara import CamaraArchivo
 from cobro_vision.adquisicion.gestor_dataset import GestorDataset
@@ -97,7 +97,7 @@ def test_determinismo_y_folds_sin_fuga(
     primero = FabricaPipeline.crear_entrenador(config)
     segundo = FabricaPipeline.crear_entrenador(config)
     particiones = []
-    dividir = GroupKFold.split
+    dividir = StratifiedGroupKFold.split
 
     def registrar(self, X, y=None, groups=None):
         for train, test in dividir(self, X, y, groups):
@@ -105,7 +105,7 @@ def test_determinismo_y_folds_sin_fuga(
             particiones.append((train.copy(), test.copy()))
             yield train, test
 
-    with patch.object(GroupKFold, "split", registrar):
+    with patch.object(StratifiedGroupKFold, "split", registrar):
         modelo_a = primero.entrenar(muestras)
         modelo_b = segundo.entrenar(list(reversed(muestras)))
     assert len(particiones) == 6

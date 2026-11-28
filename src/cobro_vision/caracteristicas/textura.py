@@ -22,11 +22,23 @@ class ExtractorTextura(ExtractorCaracteristicas):
         _validar_mascara(region.mascara, ctx.bgr.shape[:2])
         if not region.mascara.any():
             return np.zeros(len(self.nombres()), dtype=np.float32)
-        lbp = self._config["lbp"]
-        bins = lbp["puntos"] + 2
-        codigos = ctx.lbp(lbp["radio"], lbp["puntos"])[region.mascara]
-        histograma, _ = np.histogram(codigos, bins=bins, range=(0, bins))
-        partes = list(histograma / histograma.sum())
+        partes = []
+        for lbp in self._escalas_lbp():
+            bins = lbp["puntos"] + 2
+            codigos = ctx.lbp(
+                lbp["radio"], lbp["puntos"]
+            )[region.mascara]
+
+            histograma, _ = np.histogram(
+                codigos, bins=bins, range=(0, bins)
+            )
+
+            total = histograma.sum()
+
+            if total:
+                partes.extend(histograma / total)
+            else:
+                partes.extend(np.zeros(bins, dtype=np.float32))
         if self._config["gradiente"]:
             magnitud = ctx._magnitud_gradiente[region.mascara]
             partes.extend(
@@ -35,6 +47,13 @@ class ExtractorTextura(ExtractorCaracteristicas):
         if self._config["glcm"]:
             partes.extend(self._extraer_glcm(ctx, region))
         return np.asarray(partes, dtype=np.float32)
+
+    def _escalas_lbp(self) -> list[dict]:
+        """Devuelve las escalas LBP conservando el formato anterior."""
+        if "lbp_multiescala" in self._config:
+            return self._config["lbp_multiescala"]
+
+        return [self._config["lbp"]]
 
     def _extraer_glcm(self, ctx: ContextoImagen, region: Region) -> list[float]:
         x0, y0, x1, y1 = region.bbox
@@ -59,9 +78,22 @@ class ExtractorTextura(ExtractorCaracteristicas):
 
     def nombres(self) -> list[str]:
         """Conserva nombres y orden para todas las opciones de textura."""
-        nombres = [
-            f"lbp_{indice:02d}" for indice in range(self._config["lbp"]["puntos"] + 2)
-        ]
+        nombres = []
+
+        if "lbp_multiescala" not in self._config:
+            nombres.extend(
+                f"lbp_{indice:02d}"
+                for indice in range(self._config["lbp"]["puntos"] + 2)
+            )
+        else:
+            for lbp in self._escalas_lbp():
+                radio = lbp["radio"]
+                puntos = lbp["puntos"]
+
+                nombres.extend(
+                    f"lbp_r{radio}_p{puntos}_{indice:02d}"
+                    for indice in range(puntos + 2)
+                )
         if self._config["gradiente"]:
             nombres.extend(("sobel_media", "sobel_desviacion", "gris_desviacion"))
         if self._config["glcm"]:

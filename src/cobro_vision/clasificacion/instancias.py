@@ -46,7 +46,13 @@ class ConstructorInstancias:
             clases.append(clase)
         return clases
 
-    def generar(self, muestras: list[Muestra], modo: str) -> list[Instancia]:
+    def generar(
+        self,
+        muestras: list[Muestra],
+        modo: str,
+        *,
+        para_entrenamiento: bool = False,
+    ) -> list[Instancia]:
         """Rasteriza a escala y conserva la identidad del plato en cada instancia."""
         if modo not in ("poligonos", "segmentacion", "ambos"):
             raise ValueError("modo debe ser poligonos, segmentacion o ambos.")
@@ -79,7 +85,12 @@ class ConstructorInstancias:
                         "%s: se omite segmentacion: %s", muestra.id_foto, error
                     )
                 else:
-                    filas.extend(self._regiones(imagen, mascara, mapa, muestra.id_foto))
+                    filas.extend(
+                        self._regiones(
+                            imagen, mascara, mapa, muestra.id_foto,
+                            para_entrenamiento=para_entrenamiento,
+                        )
+                    )
             vectores = self.constructor.construir_lote(
                 imagen, [region for region, _, _ in filas]
             )
@@ -128,8 +139,9 @@ class ConstructorInstancias:
                 puntos = np.argwhere(erosionada)
                 if not puntos.size:
                     continue
-                elegidos = generador.integers(
-                    len(puntos), size=config["parches_por_poligono"]
+                cantidad_parches = min(config["parches_por_poligono"], len(puntos))
+                elegidos = generador.choice(
+                    len(puntos), size=cantidad_parches, replace=False
                 )
                 for y, x in puntos[elegidos]:
                     parche = np.zeros(mapa.shape, dtype=np.uint8)
@@ -142,9 +154,21 @@ class ConstructorInstancias:
         return filas
 
     def _regiones(
-        self, imagen: np.ndarray, mascara: np.ndarray, mapa: np.ndarray, id_foto: str
+        self,
+        imagen: np.ndarray,
+        mascara: np.ndarray,
+        mapa: np.ndarray,
+        id_foto: str,
+        *,
+        para_entrenamiento: bool = False,
     ) -> list[tuple[Region, str, str]]:
-        minimo = self._config.seccion("entrenamiento")["pureza_minima"]
+        config = self._config.seccion("entrenamiento")
+        minimo = config["pureza_minima"]
+        seleccion = (
+            config.get("seleccion_regiones")
+            if para_entrenamiento
+            else None
+        )
         filas = []
         regiones = self.segmentador.segmentar(imagen, mascara)
         for region in regiones:
@@ -152,7 +176,23 @@ class ConstructorInstancias:
             # 0 significa sin etiqueta: no compite como clase ni reduce el denominador.
             conteos[0] = 0
             dominante = int(conteos.argmax())
-            if dominante > 0 and conteos[dominante] / region.area >= minimo:
+            if dominante == 0:
+                continue
+
+            etiquetados = int(conteos.sum())
+            dominantes = int(conteos[dominante])
+
+            if seleccion is None:
+                aceptar = dominantes / region.area >= minimo
+            else:
+                pureza = dominantes / etiquetados
+                cobertura = etiquetados / region.area
+                aceptar = (
+                    pureza >= seleccion["pureza_etiquetada_minima"]
+                    and cobertura >= seleccion["cobertura_minima"]
+                )
+
+            if aceptar:
                 filas.append((region, self.mapa.clase_de(dominante), "region"))
         _REGISTRO.info(
             "%s: %d regiones aceptadas; %d descartadas por pureza o falta de etiqueta.",

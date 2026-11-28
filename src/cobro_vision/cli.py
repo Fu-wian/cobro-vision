@@ -320,3 +320,8 @@ def _texto_recibo(transaccion: Transaccion, moneda: str) -> str:
         ]
     )
     return "\n".join(lineas)
+
+
+
+if __name__ == "__main__":
+    raise SystemExit(principal())

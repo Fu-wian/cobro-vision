@@ -48,6 +48,9 @@ class ClasificadorSVM(Clasificador):
             )
         if not len(vectores):
             return []
+        if self.meta.get("calibracion"):
+            return self._predecir_calibrado(vectores)
+
         decisiones = self.pipeline.decision_function(vectores)
         if decisiones.ndim == 1:
             # TODO(equipo): el caso binario usa decisiones simétricas [-d, d];
@@ -66,6 +69,62 @@ class ClasificadorSVM(Clasificador):
                     self.clases[mejor], score, score < self.umbral, self.clases[segunda]
                 )
             )
+        return resultados
+
+    def _predecir_calibrado(
+        self, vectores: np.ndarray
+    ) -> list[ResultadoClasificacion]:
+        if not hasattr(self.pipeline, "predict_proba"):
+            raise ModeloIncompatible(
+                "El modelo calibrado no ofrece predict_proba."
+            )
+
+        probabilidades = np.asarray(
+            self.pipeline.predict_proba(vectores),
+            dtype=np.float64
+        )
+
+        if probabilidades.shape != (
+            len(vectores), len(self.clases)
+        ):
+            raise ModeloIncompatible(
+                "Dimensiones de probabilidades incompatibles."
+            )
+
+        if (
+            not np.isfinite(probabilidades).all()
+            or np.any(probabilidades < 0)
+            or np.any(probabilidades > 1)
+            or not np.allclose(
+                probabilidades.sum(axis=1), 1.0
+            )
+        ):
+            raise ModeloIncompatible(
+                "Probabilidades invalidas."
+            )
+
+        orden = np.argsort(
+            -probabilidades, axis=1, kind="stable"
+        )
+
+        resultados = []
+
+        for fila, (mejor, segunda) in enumerate(
+            orden[:, :2]
+        ):
+            score = float(
+                probabilidades[fila, mejor]
+            )
+
+            resultados.append(
+                ResultadoClasificacion(
+                    self.clases[mejor],
+                    score,
+                    score < self.umbral,
+                    self.clases[segunda]
+                )
+            )
+
         return resultados
 
     def guardar(self, ruta: Path) -> None:
